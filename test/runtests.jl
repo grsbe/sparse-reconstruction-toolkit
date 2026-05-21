@@ -129,6 +129,15 @@ end
     )
     workspace = LassoFISTAWorkspace(A, b)
     solver = LassoFISTASolver(A, b)
+    power_step = fista_step_size(A; method=:power)
+    power_x = lasso_fista(
+        A,
+        b,
+        0.5;
+        step=power_step,
+        abstol=1e-9,
+        reltol=1e-8,
+    )
     workspace_x = lasso_fista!(workspace, 0.5)
     solver_x = lasso_fista(solver, 0.5)
     admm_x = lasso_admm(A, b, 0.5; rho=1.0)
@@ -137,6 +146,9 @@ end
     @test info.x ≈ [1.5, -0.5, 0.0] atol = 2e-6
     @test workspace_x ≈ info.x atol = 2e-6
     @test solver_x ≈ info.x atol = 2e-6
+    @test power_x ≈ info.x atol = 2e-6
+    @test fista_step_size(A) ≈ 1.0
+    @test 0 < power_step < fista_step_size(A)
     @test info.x ≈ admm_x atol = 2e-4
 end
 
@@ -233,6 +245,9 @@ end
     @test_throws ArgumentError nonnegative_constrained_lasso_fista(A, b, 0.0)
     @test_throws ArgumentError nonnegative_constrained_lasso_fista!(fista_workspace, 0.0)
     @test_throws ArgumentError LassoFISTAWorkspace(A, b; step=0.0)
+    @test_throws ArgumentError fista_step_size(A; method=:unknown)
+    @test_throws ArgumentError fista_step_size(A; method=:power, iterations=0)
+    @test_throws ArgumentError fista_step_size(A; method=:power, safety=0.0)
     @test_throws ArgumentError lasso_admm(A, b, 1.0; rho=0.0)
     @test_throws DimensionMismatch lasso_admm(A, ones(3), 1.0)
     @test_throws DimensionMismatch lasso_admm(A, b, 1.0; x0=zeros(3))

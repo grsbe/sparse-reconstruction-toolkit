@@ -11,6 +11,7 @@ export LassoADMMSolver,
     constrained_lasso_admm!,
     constrained_lasso_fista,
     constrained_lasso_fista!,
+    fista_step_size,
     lasso_admm,
     lasso_admm!,
     lasso_fista,
@@ -202,7 +203,7 @@ end
 function LassoFISTAWorkspace(A, b; step=nothing, x0=nothing)
     _validate_problem(A, b)
     x = _initial_iterate(A, b, x0)
-    step = isnothing(step) ? inv(_least_squares_lipschitz(A)) : float(step)
+    step = isnothing(step) ? fista_step_size(A) : float(step)
     _validate_positive(step, "step")
     residual = zeros(eltype(x), length(b))
     return LassoFISTAWorkspace(
@@ -216,6 +217,28 @@ function LassoFISTAWorkspace(A, b; step=nothing, x0=nothing)
         similar(x),
         step,
     )
+end
+
+"""
+    fista_step_size(A; method=:exact, iterations=20, safety=1.05)
+
+Return a FISTA step size for the least-squares term `0.5 * norm(A * x - b)^2`.
+`method=:exact` uses `opnorm(A)`; `method=:power` uses power iterations and a
+small safety factor to avoid a costly exact spectral norm on large operators.
+"""
+function fista_step_size(A; method=:exact, iterations=20, safety=1.05)
+    ndims(A) == 2 || throw(DimensionMismatch("A must be a matrix"))
+
+    if method === :exact
+        return inv(_least_squares_lipschitz(A))
+    elseif method === :power
+        iterations isa Integer && iterations > 0 ||
+            throw(ArgumentError("iterations must be a positive integer"))
+        _validate_positive(safety, "safety")
+        return inv(float(safety) * _power_lipschitz(A, iterations))
+    end
+
+    throw(ArgumentError("method must be :exact or :power"))
 end
 
 function constrained_lasso_fista(solver::LassoFISTASolver, radius; kwargs...)
@@ -491,6 +514,27 @@ end
 function _least_squares_lipschitz(A)
     lipschitz = opnorm(A)^2
     return lipschitz > 0 ? lipschitz : one(float(lipschitz))
+end
+
+function _power_lipschitz(A, iterations)
+    T = float(eltype(A))
+    x = fill(inv(sqrt(T(size(A, 2)))), size(A, 2))
+    Ax = zeros(T, size(A, 1))
+    AtAx = similar(x)
+
+    for _ in 1:iterations
+        mul!(Ax, A, x)
+        mul!(AtAx, adjoint(A), Ax)
+        AtAx_norm = norm(AtAx)
+        if iszero(AtAx_norm)
+            return one(T)
+        end
+        @. x = AtAx / AtAx_norm
+    end
+
+    mul!(Ax, A, x)
+    lipschitz = norm(Ax)^2
+    return lipschitz > 0 ? lipschitz : one(T)
 end
 
 function _validate_problem(A, b)

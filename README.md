@@ -107,8 +107,6 @@ x1 = nonnegative_lasso_fista(fista, 1e-5)
 x2 = nonnegative_lasso_fista(fista, 5e-6; warm_start=true)
 ```
 
-The lower-level `LassoADMMWorkspace` and `LassoFISTAWorkspace` APIs remain
-available when direct control over cached state is useful.
 
 ## Useful Options
 
@@ -139,12 +137,54 @@ admm = LassoADMMSolver(A, b; rho=0.1)
 
 `rho` does not change the LASSO problem. It changes ADMM convergence behavior.
 
-FISTA computes a default step size when a workspace is created. A custom step
-can be supplied when a known safe step size is available:
+FISTA computes an exact spectral-norm step size when a workspace is created.
+For a large forward matrix `A`, or a matrix-free forward operator used in its
+place, computing that exact norm can be expensive. Use the power-iteration
+helper to get a much cheaper estimated step size:
 
 ```julia
-fista = LassoFISTASolver(A, b; step=1 / norm(A)^2)
+step = fista_step_size(A; method=:power)
+fista = LassoFISTASolver(A, b; step)
 ```
+
+The power estimate uses `iterations=20` and a `safety=1.05` margin by default.
+Raise either value if the operator is difficult to estimate. Avoid
+`1 / norm(A)^2` for a dense matrix unless the conservative Frobenius-norm bound
+is intentional; it can make FISTA take much smaller steps than necessary.
+
+## Performance Tips
+
+The first knobs to try on repeated or large inversion problems are:
+
+1. Reuse a solver and warm start nearby parameter sweeps:
+
+   ```julia
+   fista = LassoFISTASolver(A, b; step=fista_step_size(A; method=:power))
+   x1 = nonnegative_lasso_fista(fista, 1e-5)
+   x2 = nonnegative_lasso_fista(fista, 5e-6; warm_start=true)
+   ```
+
+2. Use a power-iteration FISTA step estimate when the exact spectral norm of
+   `A` is costly:
+
+   ```julia
+   step = fista_step_size(A; method=:power)
+   ```
+
+3. Restrict `maxiter` when an approximate answer is enough, especially inside
+   a lambda search:
+
+   ```julia
+   info = nonnegative_lasso_fista(
+       fista,
+       lambda;
+       maxiter=2_000,
+       return_info=true,
+   )
+   ```
+
+Check `info.converged`, `info.iterations`, and your reconstruction or residual
+quality before treating a capped solve as final.
 
 ## Threading
 
@@ -153,7 +193,7 @@ each iteration can use BLAS threads. This matters for large dense operators.
 
 ```julia
 using LinearAlgebra
-BLAS.set_num_threads(8)
+BLAS.set_num_threads(32)
 BLAS.get_num_threads()
 ```
 

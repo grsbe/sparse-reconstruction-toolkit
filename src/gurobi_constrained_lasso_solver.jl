@@ -44,7 +44,8 @@ function constrained_lasso_gurobi(
 
     model, x = _gurobi_l1_model(A; positive, verbose)
     @constraint(model, [radius; x] in MOI.NormOneCone(1 + length(x)))
-    @objective(model, Min, 0.5 * sum((A * x - b) .^ 2))
+    residual = _gurobi_residual(model, A, b, x)
+    @objective(model, Min, 0.5 * sum(residual .^ 2))
     return _solve_gurobi(model, x)
 end
 
@@ -62,7 +63,8 @@ function lasso_gurobi(
     model, x = _gurobi_l1_model(A; positive, verbose)
     @variable(model, l1_norm)
     @constraint(model, [l1_norm; x] in MOI.NormOneCone(1 + length(x)))
-    @objective(model, Min, 0.5 * sum((A * x - b) .^ 2) + lambda * l1_norm)
+    residual = _gurobi_residual(model, A, b, x)
+    @objective(model, Min, 0.5 * sum(residual .^ 2) + lambda * l1_norm)
     return _solve_gurobi(model, x)
 end
 
@@ -92,6 +94,12 @@ function _gurobi_l1_model(A; positive=false, verbose=false)
     @variable(model, x[1:size(A, 2)])
     positive && @constraint(model, x .>= 0)
     return model, x
+end
+
+function _gurobi_residual(model, A, b, x)
+    @variable(model, residual[1:length(b)])
+    @constraint(model, residual .== A * x - b)
+    return residual
 end
 
 function _solve_gurobi(model, x)

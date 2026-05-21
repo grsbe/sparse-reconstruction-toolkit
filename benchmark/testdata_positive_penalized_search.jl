@@ -19,7 +19,6 @@ function timed(f)
     return result, (time_ns() - t0) / 1e9
 end
 
-fista_step(A) = inv(norm(A)^2)
 positive_lambda_max(A, y) = max(maximum(transpose(A) * y), eps())
 relative_x_error(x, x_true) = norm(x - x_true) / max(norm(x_true), eps())
 
@@ -43,7 +42,7 @@ function better_candidate(A, y, noise, best, lambda, info, seconds)
 end
 
 function search_positive_fista(A, y, noise)
-    step = fista_step(A)
+    step = fista_step_size(A; method=:power)
     solver = LassoFISTASolver(A, y; step)
     lambda_low = 0.0
     lambda_high = positive_lambda_max(A, y)

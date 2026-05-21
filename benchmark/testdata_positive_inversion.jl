@@ -19,11 +19,6 @@ function timed(f)
     return result, (time_ns() - t0) / 1e9
 end
 
-function fista_step(A)
-    # norm(A, 2)^2 <= norm(A, Frobenius)^2; this avoids a large SVD.
-    return inv(norm(A)^2)
-end
-
 function warm_up()
     A = Matrix{Float64}(I, 3, 3)
     b = [1.0, 0.0, 0.0]
@@ -93,7 +88,7 @@ function compare_measurement(A, x_true, snr)
     )
     @printf("  ADMM setup=%0.3f s solve=%0.3f s\n", admm_setup_seconds, admm_seconds)
 
-    step = fista_step(A)
+    step = fista_step_size(A; method=:power)
     fista_solver, fista_setup_seconds = timed(() -> LassoFISTASolver(A, y; step))
     fista_info, fista_seconds = timed(
         () -> nonnegative_constrained_lasso_fista(
