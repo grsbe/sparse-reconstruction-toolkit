@@ -260,6 +260,7 @@ Real-data inversion comparisons are also included:
 ```bash
 julia --project=. benchmark/testdata_positive_inversion.jl
 julia --project=. benchmark/testdata_positive_penalized_search.jl
+julia --project=. benchmark/testdata_nonnegative_lasso_ridge_fista.jl
 ```
 
 `testdata_positive_inversion.jl` compares positive Gurobi BPDN against
@@ -268,6 +269,10 @@ positive radius-constrained ADMM and FISTA.
 `testdata_positive_penalized_search.jl` searches the positive penalized LASSO
 hyperparameter `lambda` until the residual norm is close to the supplied noise
 norm.
+
+`testdata_nonnegative_lasso_ridge_fista.jl` times a sparse-plus-smooth toy
+problem built from the test-data forward operator with 32 BLAS threads and a
+power-iteration FISTA step size.
 
 
 ## Notes
