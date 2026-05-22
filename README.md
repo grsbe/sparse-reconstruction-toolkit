@@ -3,7 +3,7 @@
 `srt` is a Julia toolkit for sparse linear inverse problems of the form
 
 ```math
-\min_x \frac{1}{2}\|Ax-b\|_2^2 + \lambda\|x\|_1
+\min_x \frac{1}{2}\|Ax+Bz-b\|_2^2 + \lambda\|x\|_1 + \eta\|z\|_2^2
 ```
 
 and related L1-ball constrained variants. It currently provides ADMM and FISTA
@@ -15,14 +15,14 @@ proximal steps.
 
 ## Quick Start
 
-Run commands from the repository root:
+Install `srt` directly from GitHub in a Julia environment:
 
-```bash
-cd /home/tobias-grasberger/sparse-reconstruction-toolkit
-julia --project=.
+```julia
+using Pkg
+Pkg.add(url="https://github.com/grsbe/sparse-reconstruction-toolkit.git")
 ```
 
-Then in Julia:
+Then load it like any other package:
 
 ```julia
 using srt
@@ -36,6 +36,9 @@ x_admm = lasso_admm(A, b, lambda)
 x_fista = lasso_fista(A, b, lambda)
 x_positive = nonnegative_lasso_fista(A, b, lambda)
 ```
+
+For a development checkout, start Julia from the repository root with
+`julia --project=.` and use the same `using srt` import.
 
 Run the package tests with:
 
