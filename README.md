@@ -7,8 +7,8 @@
 ```
 
 and related L1-ball constrained variants. It currently provides ADMM and FISTA
-solvers for standard and nonnegative LASSO problems, plus Gurobi helper solvers
-and benchmark scripts for comparison.
+solvers for standard and nonnegative LASSO problems, a two-block LASSO-ridge
+FISTA solver, plus Gurobi helper solvers and benchmark scripts for comparison.
 
 The solvers use `ProximalOperators.jl` for the L1, nonnegative, and L1-ball
 proximal steps.
@@ -51,6 +51,7 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 | Penalized LASSO with `x >= 0` | `nonnegative_lasso_admm` | `nonnegative_lasso_fista` |
 | L1-ball constrained least squares | `constrained_lasso_admm` | `constrained_lasso_fista` |
 | Nonnegative L1-ball constrained least squares | `nonnegative_constrained_lasso_admm` | `nonnegative_constrained_lasso_fista` |
+| L1-regularized `x` and ridge-regularized `z` |  | `lasso_ridge_fista` |
 
 The penalized calls use `lambda`:
 
@@ -67,6 +68,25 @@ x = nonnegative_constrained_lasso_fista(A, b, radius)
 
 `nonnegative` means `x >= 0`. Zeros are still allowed and are important for
 sparse reconstructions.
+
+For a sparse block `x` and ridge block `z`, use the LASSO-ridge FISTA solver:
+
+```julia
+result = lasso_ridge_fista(A, B, b, lambda_x, lambda_z)
+x = result.x
+z = result.z
+```
+
+It minimizes
+
+```math
+\frac{1}{2}\|Ax+Bz-b\|_2^2 + \lambda_x\|x\|_1 +
+\frac{\lambda_z}{2}\|z\|_2^2.
+```
+
+Use `x_nonnegative=true` or `z_nonnegative=true` to constrain either block to
+be nonnegative. Reusable `LassoRidgeFISTASolver` and
+`LassoRidgeFISTAWorkspace` objects follow the ordinary FISTA API.
 
 ## Repeated Solves
 
