@@ -1,4 +1,5 @@
 using LinearAlgebra
+using Random
 using Test
 using SparseReconstructionToolkit
 
@@ -382,6 +383,8 @@ end
     @test signed.x ≈ [2.0, -1.0, 0.2] atol = 2e-6
     @test signed.validation_error ≈ 0.0 atol = 2e-10
     @test signed.validation_error == minimum(signed.validation_errors)
+    @test signed.lambda_1se in signed.lambdas
+    @test length(signed.validation_standard_errors) == length(lambdas)
     @test size(signed.fold_errors) == (length(lambdas), 3)
     @test length(signed.fold_indices) == 3
     @test all(length.(signed.fold_indices) .== 3)
@@ -391,6 +394,7 @@ end
     @test positive.x ≈ [2.0, 0.0, 0.2] atol = 2e-6
     @test positive.validation_error ≈ 1 / 3 atol = 2e-6
     @test positive.validation_error == minimum(positive.validation_errors)
+    @test positive.lambda_1se in positive.lambdas
     @test size(positive.fold_errors) == (length(lambdas), 3)
     @test positive.info.converged
 
@@ -403,6 +407,99 @@ end
     @test_throws ArgumentError lasso_crossvalidation(A, b; algorithm=:unknown)
     @test_throws ArgumentError lasso_crossvalidation(A, b; warm_start=false)
     @test_throws ArgumentError lasso_crossvalidation(A, b; return_info=false)
+end
+
+@testset "LASSO uncertainty helpers" begin
+    A = vcat(Matrix{Float64}(I, 3, 3), Matrix{Float64}(I, 3, 3))
+    b = repeat([2.0, -1.0, 0.2], 2)
+    rng = MersenneTwister(42)
+
+    bootstrap = lasso_bootstrap_uncertainty(
+        A,
+        b,
+        0.0;
+        samples=6,
+        rng,
+        algorithm=:fista,
+        abstol=1e-9,
+        reltol=1e-8,
+    )
+    noise = lasso_noise_perturbation_uncertainty(
+        A,
+        b,
+        0.0;
+        noise_sigma=0.0,
+        samples=4,
+        algorithm=:fista,
+        abstol=1e-9,
+        reltol=1e-8,
+    )
+    stability = nonnegative_lasso_stability_selection(
+        A,
+        b,
+        [0.0, 0.5];
+        samples=4,
+        subsample_fraction=1.0,
+        rng=MersenneTwister(7),
+        algorithm=:admm,
+        rho=1.0,
+        abstol=1e-9,
+        reltol=1e-8,
+    )
+    path = lasso_lambda_path(
+        A,
+        b,
+        [1.0, 0.5, 0.0];
+        algorithm=:fista,
+        abstol=1e-9,
+        reltol=1e-8,
+    )
+    positive_path = nonnegative_lasso_lambda_path(
+        A,
+        b,
+        [0.5, 0.0];
+        algorithm=:admm,
+        rho=1.0,
+        abstol=1e-9,
+        reltol=1e-8,
+    )
+    debiased = debiased_lasso_refit(A, b, [1.5, -0.5, 0.0])
+
+    @test size(bootstrap.coefficient_draws) == (3, 6)
+    @test length(bootstrap.coefficient_mean) == 3
+    @test length(bootstrap.coefficient_std) == 3
+    @test all(0 .<= bootstrap.selection_probability .<= 1)
+    @test length(bootstrap.prediction_mean) == length(b)
+
+    @test noise.coefficient_mean ≈ [2.0, -1.0, 0.2] atol = 2e-6
+    @test all(noise.coefficient_std .<= 2e-6)
+    @test all(noise.selection_probability .== 1.0)
+
+    @test stability.lambdas == [0.0, 0.5]
+    @test size(stability.selection_probability) == (3, 2)
+    @test stability.selection_probability[:, 1] ≈ [1.0, 0.0, 1.0] atol = 1e-6
+    @test stability.sample_size == length(b)
+
+    @test path.lambdas == [1.0, 0.5, 0.0]
+    @test size(path.coefficients) == (3, 3)
+    @test path.coefficients[:, end] ≈ [2.0, -1.0, 0.2] atol = 2e-6
+    @test path.residuals[end] <= path.residuals[1]
+    @test path.activation_max_lambda[1] == 1.0
+
+    @test positive_path.coefficients[:, end] ≈ [2.0, 0.0, 0.2] atol = 2e-6
+    @test all(positive_path.coefficients .>= -2e-6)
+
+    @test debiased.support == [1, 2]
+    @test debiased.x ≈ [2.0, -1.0, 0.0] atol = 2e-6
+    @test size(debiased.covariance) == (3, 3)
+    @test all(debiased.standard_error .>= 0)
+
+    @test_throws ArgumentError lasso_bootstrap_uncertainty(A, b, 0.0; samples=0)
+    @test_throws ArgumentError lasso_noise_perturbation_uncertainty(A, b, 0.0; samples=1)
+    @test_throws ArgumentError lasso_noise_perturbation_uncertainty(A, b, 0.0; noise_sigma=0.0, noise_norm=1.0)
+    @test_throws ArgumentError lasso_stability_selection(A, b, 0.0; subsample_fraction=0.0)
+    @test_throws ArgumentError lasso_lambda_path(A, b, Float64[])
+    @test_throws DimensionMismatch debiased_lasso_refit(A, b, zeros(2))
 end
 
 @testset "ADMM input validation" begin

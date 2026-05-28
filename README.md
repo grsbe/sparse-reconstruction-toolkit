@@ -178,7 +178,26 @@ cv.validation_error
 ```
 
 Use `folds=3` for a lighter 3-way sweep. If `lambdas` is omitted, a default
-geometric grid is built from the data.
+geometric grid is built from the data. CV results also include fold standard
+errors and `lambda_1se` for the one-standard-error rule.
+
+## Uncertainty Diagnostics
+
+LASSO uncertainty is approximate because the active set is selected from the
+same data. The toolkit provides compute-heavier diagnostics for sensitivity and
+support stability:
+
+```julia
+boot = nonnegative_lasso_bootstrap_uncertainty(A, b, lambda; samples=200)
+stability = nonnegative_lasso_stability_selection(A, b, lambda; samples=200)
+path = nonnegative_lasso_lambda_path(A, b, [1e-3, 3e-4, 1e-4])
+refit = debiased_lasso_refit(A, b, boot.coefficient_mean; positive=true)
+```
+
+Use `lasso_noise_perturbation_uncertainty` when you have an assumed noise
+standard deviation or L2 noise norm. Bootstrap and perturbation summaries return
+coefficient intervals, coefficient standard deviations, selection probabilities,
+and prediction means/standard deviations.
 
 
 ## Useful Options

@@ -310,7 +310,14 @@ function _lasso_crossvalidation(
 
     fold_sizes = length.(row_folds)
     validation_errors = fold_errors * fold_sizes ./ length(b)
+    validation_standard_errors = _fold_standard_errors(fold_errors)
     best_index = argmin(validation_errors)
+    one_se_index = _one_standard_error_index(
+        lambda_grid,
+        validation_errors,
+        validation_standard_errors,
+        best_index,
+    )
     final_solver = _noise_sweep_solver(A, b, algorithm; x0, step, rho)
     info = _noise_sweep_solve(
         final_solver,
@@ -328,11 +335,45 @@ function _lasso_crossvalidation(
         x=info.x,
         validation_error=validation_errors[best_index],
         validation_errors=validation_errors,
+        validation_standard_error=validation_standard_errors[best_index],
+        validation_standard_errors=validation_standard_errors,
+        lambda_1se=lambda_grid[one_se_index],
+        index_1se=one_se_index,
         fold_errors=fold_errors,
         fold_sizes=fold_sizes,
         lambdas=lambda_grid,
         fold_indices=row_folds,
     )
+end
+
+
+function _fold_standard_errors(fold_errors)
+    nfolds = size(fold_errors, 2)
+    standard_errors = zeros(eltype(fold_errors), size(fold_errors, 1))
+    if nfolds == 1
+        return standard_errors
+    end
+
+    for row in axes(fold_errors, 1)
+        mean_error = sum(view(fold_errors, row, :)) / nfolds
+        variance = zero(eltype(fold_errors))
+        for fold in axes(fold_errors, 2)
+            variance += (fold_errors[row, fold] - mean_error)^2
+        end
+        standard_errors[row] = sqrt(variance / (nfolds - 1)) / sqrt(nfolds)
+    end
+    return standard_errors
+end
+
+function _one_standard_error_index(
+    lambdas,
+    validation_errors,
+    validation_standard_errors,
+    best_index,
+)
+    threshold = validation_errors[best_index] + validation_standard_errors[best_index]
+    eligible = findall(error -> error <= threshold, validation_errors)
+    return eligible[argmax(lambdas[eligible])]
 end
 
 function _validate_crossvalidation_kwargs(kwargs)
