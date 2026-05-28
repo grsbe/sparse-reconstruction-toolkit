@@ -2,7 +2,7 @@
 
 julia_version = "1.12.4"
 manifest_format = "2.0"
-project_hash = "a760655f323ce76cbf34dba6e327c09c06ba6a79"
+project_hash = "ebc89e63906555de961d4473a72ee3d708d6a6a3"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "bbc22a9a08a0ef6460041086d8a7b27940ed4ffd"
@@ -726,6 +726,12 @@ deps = ["Libdl", "LinearAlgebra", "Random", "Serialization", "SuiteSparse_jll"]
 uuid = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 version = "1.12.0"
 
+[[deps.SparseReconstructionToolkit]]
+deps = ["Gurobi", "JLD2", "JuMP", "LinearAlgebra", "MLJLinearModels", "ProximalOperators"]
+path = "."
+uuid = "baad9cdf-0f0f-4f74-9697-91a6b13b9c73"
+version = "0.1.0"
+
 [[deps.SpecialFunctions]]
 deps = ["IrrationalConstants", "LogExpFunctions", "OpenLibm_jll", "OpenSpecFun_jll"]
 git-tree-sha1 = "2700b235561b0335d5bef7097a111dc513b8655e"
@@ -865,9 +871,3 @@ version = "1.64.0+1"
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "Libdl"]
 uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 version = "17.7.0+0"
-
-[[deps.srt]]
-deps = ["Gurobi", "JuMP", "LinearAlgebra", "MLJLinearModels", "ProximalOperators"]
-path = "."
-uuid = "baad9cdf-0f0f-4f74-9697-91a6b13b9c73"
-version = "0.1.0"

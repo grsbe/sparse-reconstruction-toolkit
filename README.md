@@ -1,6 +1,6 @@
 # Sparse Reconstruction Toolkit
 
-`srt` is a Julia toolkit for sparse linear inverse problems of the form
+`SparseReconstructionToolkit` is a Julia toolkit for sparse linear inverse problems of the form
 
 ```math
 \min_x \frac{1}{2}\|Ax+Bz-b\|_2^2 + \lambda\|x\|_1 + \eta\|z\|_2^2
@@ -15,7 +15,7 @@ proximal steps.
 
 ## Quick Start
 
-Install `srt` directly from GitHub in a Julia environment:
+Install `SparseReconstructionToolkit` directly from GitHub in a Julia environment:
 
 ```julia
 using Pkg
@@ -25,7 +25,7 @@ Pkg.add(url="https://github.com/grsbe/sparse-reconstruction-toolkit.git")
 Then load it like any other package:
 
 ```julia
-using srt
+using SparseReconstructionToolkit
 using LinearAlgebra
 
 A = Matrix{Float64}(I, 3, 3)
@@ -38,7 +38,7 @@ x_positive = nonnegative_lasso_fista(A, b, lambda)
 ```
 
 For a development checkout, start Julia from the repository root with
-`julia --project=.` and use the same `using srt` import.
+`julia --project=.` and use the same `using SparseReconstructionToolkit` import.
 
 Run the package tests with:
 
@@ -55,6 +55,7 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 | L1-ball constrained least squares | `constrained_lasso_admm` | `constrained_lasso_fista` |
 | Nonnegative L1-ball constrained least squares | `nonnegative_constrained_lasso_admm` | `nonnegative_constrained_lasso_fista` |
 | L1-regularized `x` and ridge-regularized `z` |  | `lasso_ridge_fista` |
+| Nonnegative L1-regularized `x` and ridge-regularized `z` |  | `nonnegative_lasso_ridge_fista` |
 
 The penalized calls use `lambda`:
 
@@ -80,6 +81,14 @@ x = result.x
 z = result.z
 ```
 
+If both blocks should be nonnegative, use the dedicated wrapper:
+
+```julia
+positive_result = nonnegative_lasso_ridge_fista(A, B, b, lambda_x, lambda_z)
+x = positive_result.x
+z = positive_result.z
+```
+
 It minimizes
 
 ```math
@@ -88,8 +97,9 @@ It minimizes
 ```
 
 Use `x_nonnegative=true` or `z_nonnegative=true` to constrain either block to
-be nonnegative. Reusable `LassoRidgeFISTASolver` and
-`LassoRidgeFISTAWorkspace` objects follow the ordinary FISTA API.
+be nonnegative, or call `nonnegative_lasso_ridge_fista` when both blocks should
+be constrained. Reusable `LassoRidgeFISTASolver` and `LassoRidgeFISTAWorkspace`
+objects follow the ordinary FISTA API.
 
 ## Repeated Solves
 
@@ -234,7 +244,7 @@ built with JuMP and Gurobi:
 - `constrained_lasso_gurobi(A, b, radius; positive=false)`
 
 These helpers are included by the benchmark scripts rather than exported from
-`srt`:
+the package:
 
 ```julia
 include("src/gurobi_constrained_lasso_solver.jl")
@@ -272,7 +282,8 @@ norm.
 
 `testdata_nonnegative_lasso_ridge_fista.jl` times a sparse-plus-smooth toy
 problem built from the test-data forward operator with 32 BLAS threads and a
-power-iteration FISTA step size.
+power-iteration FISTA step size, and uses `nonnegative_lasso_ridge_fista` for
+the solver comparison.
 
 
 ## Notes

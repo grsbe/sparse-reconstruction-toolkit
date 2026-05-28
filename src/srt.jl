@@ -1,5 +1,3 @@
-module srt
-
 using LinearAlgebra
 using ProximalOperators
 
@@ -20,6 +18,8 @@ export LassoADMMSolver,
     lasso_fista!,
     lasso_ridge_fista,
     lasso_ridge_fista!,
+    nonnegative_lasso_ridge_fista,
+    nonnegative_lasso_ridge_fista!,
     nonnegative_constrained_lasso_admm,
     nonnegative_constrained_lasso_admm!,
     nonnegative_constrained_lasso_fista,
@@ -86,6 +86,22 @@ function lasso_ridge_fista(A, B, b, lambda_x, lambda_z; kwargs...)
     _validate_nonnegative(lambda_x, "lambda_x")
     _validate_nonnegative(lambda_z, "lambda_z")
     return _lasso_ridge_fista(A, B, b, lambda_x, lambda_z; kwargs...)
+end
+
+# Solve the LASSO-ridge problem with x >= 0 and z >= 0 using FISTA.
+function nonnegative_lasso_ridge_fista(A, B, b, lambda_x, lambda_z; kwargs...)
+    _validate_nonnegative(lambda_x, "lambda_x")
+    _validate_nonnegative(lambda_z, "lambda_z")
+    return _lasso_ridge_fista(
+        A,
+        B,
+        b,
+        lambda_x,
+        lambda_z;
+        x_nonnegative=true,
+        z_nonnegative=true,
+        kwargs...,
+    )
 end
 
 # Reuse this solver when A, b, and rho stay fixed across ADMM solves.
@@ -362,6 +378,15 @@ function lasso_ridge_fista(
     return lasso_ridge_fista!(solver.workspace, lambda_x, lambda_z; kwargs...)
 end
 
+function nonnegative_lasso_ridge_fista(
+    solver::LassoRidgeFISTASolver,
+    lambda_x,
+    lambda_z;
+    kwargs...,
+)
+    return nonnegative_lasso_ridge_fista!(solver.workspace, lambda_x, lambda_z; kwargs...)
+end
+
 function constrained_lasso_fista!(
     workspace::LassoFISTAWorkspace,
     radius;
@@ -415,6 +440,26 @@ function lasso_ridge_fista!(
         workspace,
         lambda_x,
         lambda_z;
+        warm_start,
+        kwargs...,
+    )
+end
+
+function nonnegative_lasso_ridge_fista!(
+    workspace::LassoRidgeFISTAWorkspace,
+    lambda_x,
+    lambda_z;
+    warm_start=false,
+    kwargs...,
+)
+    _validate_nonnegative(lambda_x, "lambda_x")
+    _validate_nonnegative(lambda_z, "lambda_z")
+    return _lasso_ridge_fista!(
+        workspace,
+        lambda_x,
+        lambda_z;
+        x_nonnegative=true,
+        z_nonnegative=true,
         warm_start,
         kwargs...,
     )
@@ -847,6 +892,4 @@ function _validate_nonnegative(value, name)
     isfinite(value) && value >= 0 ||
         throw(ArgumentError("$(name) must be finite and nonnegative"))
     return nothing
-end
-
 end

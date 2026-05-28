@@ -2,7 +2,7 @@ using LinearAlgebra
 using MLJLinearModels
 using Random
 using Statistics
-using srt
+using SparseReconstructionToolkit
 
 const SAMPLE_COUNT = 5
 const N_SAMPLES = 500

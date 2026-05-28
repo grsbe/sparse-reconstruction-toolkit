@@ -3,7 +3,7 @@ using LinearAlgebra
 using Printf
 using Random
 using Statistics
-using srt
+using SparseReconstructionToolkit
 
 const DATA_DIR = joinpath(@__DIR__, "..", "testdata")
 const BLAS_THREADS = 32

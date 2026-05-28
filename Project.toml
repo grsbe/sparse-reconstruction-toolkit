@@ -1,4 +1,4 @@
-name = "srt"
+name = "SparseReconstructionToolkit"
 uuid = "baad9cdf-0f0f-4f74-9697-91a6b13b9c73"
 version = "0.1.0"
 authors = ["Tobias Grasberger"]

@@ -1,7 +1,7 @@
 using JLD2
 using LinearAlgebra
 using Printf
-using srt
+using SparseReconstructionToolkit
 
 const DATA_DIR = joinpath(@__DIR__, "..", "testdata")
 const BLAS_THREADS = 32

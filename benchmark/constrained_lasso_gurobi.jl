@@ -1,7 +1,7 @@
 using LinearAlgebra
 using Random
 using Statistics
-using srt
+using SparseReconstructionToolkit
 
 include(joinpath(@__DIR__, "..", "src", "gurobi_constrained_lasso_solver.jl"))
 

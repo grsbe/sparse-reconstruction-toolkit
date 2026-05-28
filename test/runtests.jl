@@ -1,6 +1,6 @@
 using LinearAlgebra
 using Test
-using srt
+using SparseReconstructionToolkit
 
 @testset "penalized LASSO ADMM" begin
     A = Matrix{Float64}(I, 3, 3)
@@ -244,9 +244,22 @@ end
         reltol=1e-8,
         return_info=true,
     )
+    named_positive_info = nonnegative_lasso_ridge_fista(
+        A,
+        B,
+        b,
+        0.5,
+        1.0;
+        abstol=1e-9,
+        reltol=1e-8,
+        return_info=true,
+    )
     workspace = LassoRidgeFISTAWorkspace(A, B, b)
+    named_workspace = LassoRidgeFISTAWorkspace(A, B, b)
     solver = LassoRidgeFISTASolver(A, B, b)
+    named_solver = LassoRidgeFISTASolver(A, B, b)
     workspace_result = lasso_ridge_fista!(workspace, 0.5, 1.0)
+    named_workspace_result = nonnegative_lasso_ridge_fista!(named_workspace, 0.5, 1.0)
     warm_info = lasso_ridge_fista!(
         workspace,
         0.5,
@@ -255,6 +268,7 @@ end
         return_info=true,
     )
     solver_result = lasso_ridge_fista(solver, 0.5, 1.0)
+    named_solver_result = nonnegative_lasso_ridge_fista(named_solver, 0.5, 1.0)
     power_step = fista_step_size(A, B; method=:power)
     power_result = lasso_ridge_fista(
         A,
@@ -272,12 +286,18 @@ end
     @test info.z ≈ [1.5, -2.0] atol = 2e-6
     @test positive_info.x ≈ [1.5, 0.0] atol = 2e-6
     @test positive_info.z ≈ [1.5, 0.0] atol = 2e-6
+    @test named_positive_info.x ≈ positive_info.x atol = 2e-6
+    @test named_positive_info.z ≈ positive_info.z atol = 2e-6
     @test all(positive_info.x .>= -2e-6)
     @test all(positive_info.z .>= -2e-6)
     @test workspace_result.x ≈ info.x atol = 2e-6
     @test workspace_result.z ≈ info.z atol = 2e-6
+    @test named_workspace_result.x ≈ positive_info.x atol = 2e-6
+    @test named_workspace_result.z ≈ positive_info.z atol = 2e-6
     @test solver_result.x ≈ info.x atol = 2e-6
     @test solver_result.z ≈ info.z atol = 2e-6
+    @test named_solver_result.x ≈ positive_info.x atol = 2e-6
+    @test named_solver_result.z ≈ positive_info.z atol = 2e-6
     @test power_result.x ≈ info.x atol = 2e-6
     @test power_result.z ≈ info.z atol = 2e-6
     @test warm_info.iterations <= 2
