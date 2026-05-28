@@ -305,6 +305,106 @@ end
     @test 0 < power_step < fista_step_size(A, B)
 end
 
+@testset "noise-matching hyperparameter sweeps" begin
+    A = Matrix{Float64}(I, 3, 3)
+    b = [2.0, -1.0, 0.2]
+
+    signed_target = norm(lasso_fista(A, b, 0.5) - b)
+    signed = lasso_noise_sweep(
+        A,
+        b,
+        signed_target;
+        algorithm=:fista,
+        steps=8,
+        abstol=1e-9,
+        reltol=1e-8,
+    )
+
+    positive_target = norm([1.5, 0.0, 0.0] - b)
+    positive = nonnegative_lasso_noise_sweep(
+        A,
+        b,
+        positive_target;
+        algorithm=:admm,
+        steps=8,
+        rho=1.0,
+        abstol=1e-9,
+        reltol=1e-8,
+    )
+
+    @test signed.lambda ≈ 0.5 atol = 1e-6
+    @test signed.residual ≈ signed_target atol = 2e-6
+    @test signed.x ≈ lasso_fista(A, b, 0.5) atol = 2e-6
+    @test length(signed.trials) <= 8
+    @test signed.info.converged
+
+    @test positive.lambda ≈ 0.5 atol = 1e-6
+    @test positive.residual ≈ positive_target atol = 2e-6
+    @test positive.x ≈ [1.5, 0.0, 0.0] atol = 2e-6
+    @test length(positive.trials) <= 8
+    @test positive.info.converged
+
+    @test_throws ArgumentError lasso_noise_sweep(A, b, -1.0)
+    @test_throws ArgumentError lasso_noise_sweep(A, b, 1.0; steps=0)
+    @test_throws ArgumentError lasso_noise_sweep(A, b, 1.0; algorithm=:unknown)
+    @test_throws ArgumentError lasso_noise_sweep(A, b, 1.0; lambda_high=0.0)
+    @test_throws ArgumentError lasso_noise_sweep(A, b, 1.0; warm_start=false)
+    @test_throws ArgumentError lasso_noise_sweep(A, b, 1.0; return_info=false)
+end
+
+@testset "cross-validation hyperparameter sweeps" begin
+    base_A = Matrix{Float64}(I, 3, 3)
+    A = vcat(base_A, base_A, base_A)
+    b = repeat([2.0, -1.0, 0.2], 3)
+    lambdas = [1.0, 0.5, 0.0]
+
+    signed = lasso_crossvalidation(
+        A,
+        b;
+        folds=3,
+        lambdas,
+        algorithm=:fista,
+        abstol=1e-9,
+        reltol=1e-8,
+    )
+    positive = nonnegative_lasso_crossvalidation(
+        A,
+        b;
+        folds=3,
+        lambdas,
+        algorithm=:admm,
+        rho=1.0,
+        abstol=1e-9,
+        reltol=1e-8,
+    )
+
+    @test signed.lambda == 0.0
+    @test signed.x ≈ [2.0, -1.0, 0.2] atol = 2e-6
+    @test signed.validation_error ≈ 0.0 atol = 2e-10
+    @test signed.validation_error == minimum(signed.validation_errors)
+    @test size(signed.fold_errors) == (length(lambdas), 3)
+    @test length(signed.fold_indices) == 3
+    @test all(length.(signed.fold_indices) .== 3)
+    @test signed.info.converged
+
+    @test positive.lambda == 0.0
+    @test positive.x ≈ [2.0, 0.0, 0.2] atol = 2e-6
+    @test positive.validation_error ≈ 1 / 3 atol = 2e-6
+    @test positive.validation_error == minimum(positive.validation_errors)
+    @test size(positive.fold_errors) == (length(lambdas), 3)
+    @test positive.info.converged
+
+    @test_throws ArgumentError lasso_crossvalidation(A, b; folds=1)
+    @test_throws ArgumentError lasso_crossvalidation(A, b; folds=length(b) + 1)
+    @test_throws ArgumentError lasso_crossvalidation(A, b; lambdas=Float64[])
+    @test_throws ArgumentError lasso_crossvalidation(A, b; lambdas=[-1.0])
+    @test_throws ArgumentError lasso_crossvalidation(A, b; grid_length=0)
+    @test_throws ArgumentError lasso_crossvalidation(A, b; min_ratio=2.0)
+    @test_throws ArgumentError lasso_crossvalidation(A, b; algorithm=:unknown)
+    @test_throws ArgumentError lasso_crossvalidation(A, b; warm_start=false)
+    @test_throws ArgumentError lasso_crossvalidation(A, b; return_info=false)
+end
+
 @testset "ADMM input validation" begin
     A = Matrix{Float64}(I, 2, 2)
     b = ones(2)

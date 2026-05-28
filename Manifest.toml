@@ -2,7 +2,7 @@
 
 julia_version = "1.12.4"
 manifest_format = "2.0"
-project_hash = "ebc89e63906555de961d4473a72ee3d708d6a6a3"
+project_hash = "afcf7fc96ce418caf5c17227e86ed3464c1afb72"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "bbc22a9a08a0ef6460041086d8a7b27940ed4ffd"
@@ -727,7 +727,7 @@ uuid = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 version = "1.12.0"
 
 [[deps.SparseReconstructionToolkit]]
-deps = ["Gurobi", "JLD2", "JuMP", "LinearAlgebra", "MLJLinearModels", "ProximalOperators"]
+deps = ["Gurobi", "JLD2", "JuMP", "LinearAlgebra", "MLJLinearModels", "ProximalOperators", "Random"]
 path = "."
 uuid = "baad9cdf-0f0f-4f74-9697-91a6b13b9c73"
 version = "0.1.0"

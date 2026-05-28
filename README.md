@@ -140,6 +140,46 @@ x1 = nonnegative_lasso_fista(fista, 1e-5)
 x2 = nonnegative_lasso_fista(fista, 5e-6; warm_start=true)
 ```
 
+If the L2 norm of the noise is known, the package can choose `lambda` by a
+warm-started residual-matching search:
+
+```julia
+result = nonnegative_lasso_noise_sweep(
+    A,
+    b,
+    noise_l2;
+    algorithm=:fista,
+    steps=12,
+    step=fista_step_size(A; method=:power),
+)
+
+lambda = result.lambda
+x = result.x
+result.residual
+```
+
+Use `lasso_noise_sweep` for signed coefficients or set `algorithm=:admm` to run
+the same bisection with ADMM.
+
+You can also estimate `lambda` with row-wise k-fold cross-validation:
+
+```julia
+cv = nonnegative_lasso_crossvalidation(
+    A,
+    b;
+    folds=5,
+    lambdas=[1e-3, 3e-4, 1e-4, 3e-5],
+    algorithm=:fista,
+)
+
+lambda = cv.lambda
+x = cv.x
+cv.validation_error
+```
+
+Use `folds=3` for a lighter 3-way sweep. If `lambdas` is omitted, a default
+geometric grid is built from the data.
+
 
 ## Useful Options
 
