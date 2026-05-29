@@ -184,20 +184,113 @@ errors and `lambda_1se` for the one-standard-error rule.
 ## Uncertainty Diagnostics
 
 LASSO uncertainty is approximate because the active set is selected from the
-same data. The toolkit provides compute-heavier diagnostics for sensitivity and
-support stability:
+same data and the L1 penalty shrinks active coefficients. The toolkit therefore
+provides compute-heavier diagnostics that answer slightly different questions
+instead of pretending there is one universal LASSO standard error.
+
+Bootstrap resampling asks how much the answer changes when the observed rows are
+resampled. Each bootstrap sample draws rows of `(A, b)` with replacement, solves
+LASSO again, and summarizes the coefficient draws:
 
 ```julia
-boot = nonnegative_lasso_bootstrap_uncertainty(A, b, lambda; samples=200)
-stability = nonnegative_lasso_stability_selection(A, b, lambda; samples=200)
-path = nonnegative_lasso_lambda_path(A, b, [1e-3, 3e-4, 1e-4])
-refit = debiased_lasso_refit(A, b, boot.coefficient_mean; positive=true)
+boot = nonnegative_lasso_bootstrap_uncertainty(
+    A,
+    b,
+    lambda;
+    samples=200,
+    algorithm=:fista,
+)
+
+boot.coefficient_mean
+boot.coefficient_std
+boot.coefficient_interval.lower
+boot.coefficient_interval.upper
+boot.selection_probability
 ```
 
-Use `lasso_noise_perturbation_uncertainty` when you have an assumed noise
-standard deviation or L2 noise norm. Bootstrap and perturbation summaries return
-coefficient intervals, coefficient standard deviations, selection probabilities,
-and prediction means/standard deviations.
+Use bootstrap when rows are reasonably exchangeable measurements and you want
+coefficient intervals, selection probabilities, or prediction bands. It costs one
+solve per sample.
+
+Noise perturbation asks how much the answer changes under an assumed additive
+Gaussian noise model. It repeatedly solves with `b + noise_sigma * randn(...)`.
+If you know only the L2 norm of the noise, pass `noise_norm` instead:
+
+```julia
+noise_uncertainty = nonnegative_lasso_noise_perturbation_uncertainty(
+    A,
+    b,
+    lambda;
+    noise_norm=noise_l2,
+    samples=200,
+)
+```
+
+Use this when the noise model is more trustworthy than row resampling. It returns
+the same summary fields as the bootstrap routine.
+
+Stability selection asks which coefficients are reliably selected. It repeatedly
+solves on random row subsets and reports how often each coefficient is active:
+
+```julia
+stability = nonnegative_lasso_stability_selection(
+    A,
+    b,
+    [lambda, lambda / 3, lambda / 10];
+    samples=200,
+    subsample_fraction=0.5,
+    threshold=0.8,
+)
+
+stability.selection_probability
+stability.stable_support
+```
+
+Use stability selection when support confidence matters more than coefficient
+intervals. A high selection probability means a component survives many data
+subsets; it is not a classical p-value.
+
+Lambda-path sensitivity asks whether conclusions depend on a narrow tuning
+choice. It solves nearby lambdas with warm starts and records coefficient paths,
+residual norms, L1 norms, and active-set indicators:
+
+```julia
+path = nonnegative_lasso_lambda_path(A, b, [1e-3, 3e-4, 1e-4])
+
+path.coefficients
+path.residuals
+path.active
+path.activation_min_lambda
+path.activation_max_lambda
+```
+
+Use this to see whether components persist across regularization strengths or
+appear only at one fragile lambda.
+
+Debiased refit asks what the coefficients look like after removing LASSO shrinkage
+on the selected support. For signed models it refits ordinary least squares on
+the active support. With `positive=true`, it refits a nonnegative least-squares
+problem on that support and drops selected coefficients that cannot stay positive:
+
+```julia
+x_lasso = nonnegative_lasso_fista(A, b, lambda)
+refit = debiased_lasso_refit(A, b, x_lasso; positive=true)
+
+refit.x
+refit.support
+refit.original_support
+refit.standard_error
+refit.covariance
+```
+
+The refit standard errors are conditional on the final support. They are useful
+for diagnostics, but they do not include support-selection uncertainty; combine
+with bootstrap or stability selection when support uncertainty matters.
+
+Cross-validation results also include `validation_standard_errors` and
+`lambda_1se`. The one-standard-error rule picks the largest lambda whose CV error
+is within one standard error of the best CV error, giving a more conservative
+sparser model when several lambdas perform similarly.
 
 
 ## Useful Options

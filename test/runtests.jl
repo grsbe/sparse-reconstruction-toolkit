@@ -464,6 +464,12 @@ end
         reltol=1e-8,
     )
     debiased = debiased_lasso_refit(A, b, [1.5, -0.5, 0.0])
+    positive_refit = debiased_lasso_refit(
+        [1.0 1.0; 1.0 0.0],
+        [0.1, 1.0],
+        [1.0, 1.0];
+        positive=true,
+    )
 
     @test size(bootstrap.coefficient_draws) == (3, 6)
     @test length(bootstrap.coefficient_mean) == 3
@@ -493,6 +499,11 @@ end
     @test debiased.x ≈ [2.0, -1.0, 0.0] atol = 2e-6
     @test size(debiased.covariance) == (3, 3)
     @test all(debiased.standard_error .>= 0)
+
+    @test positive_refit.original_support == [1, 2]
+    @test positive_refit.support == [1]
+    @test positive_refit.x ≈ [0.55, 0.0] atol = 2e-6
+    @test positive_refit.standard_error[2] == 0.0
 
     @test_throws ArgumentError lasso_bootstrap_uncertainty(A, b, 0.0; samples=0)
     @test_throws ArgumentError lasso_noise_perturbation_uncertainty(A, b, 0.0; samples=1)

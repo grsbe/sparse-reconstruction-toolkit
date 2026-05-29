@@ -11,10 +11,21 @@ export debiased_lasso_refit,
 """
     lasso_bootstrap_uncertainty(A, b, lambda; samples=100, kwargs...)
 
-Estimate coefficient uncertainty by resampling rows of `(A, b)` with replacement
-and resolving LASSO. Returns coefficient draws, means, standard deviations,
-quantile intervals, selection probabilities, and prediction summaries on the
-original rows.
+Estimate uncertainty by nonparametric row bootstrap. Each sample draws
+`length(b)` rows from `(A, b)` with replacement, solves LASSO at the same
+`lambda`, and stores the coefficient vector. This captures sensitivity to the
+observed measurement set and is useful when rows can be treated as exchangeable
+measurements.
+
+Important keywords:
+- `samples`: number of bootstrap solves.
+- `algorithm`: `:fista` or `:admm`.
+- `rng`: random-number generator for reproducible resampling.
+- `confidence_level`: coefficient quantile interval level, default `0.95`.
+- `selection_tol`: absolute coefficient threshold for active-set probability.
+
+Returns coefficient draws, coefficient mean/std, coefficient quantile intervals,
+selection probabilities, and prediction mean/std on the original rows.
 """
 function lasso_bootstrap_uncertainty(A, b, lambda; kwargs...)
     return _lasso_resampling_uncertainty(A, b, lambda, false, :bootstrap; kwargs...)
@@ -23,7 +34,10 @@ end
 """
     nonnegative_lasso_bootstrap_uncertainty(A, b, lambda; samples=100, kwargs...)
 
-Bootstrap uncertainty for nonnegative penalized LASSO.
+Bootstrap uncertainty for nonnegative penalized LASSO. This is the nonnegative
+counterpart of `lasso_bootstrap_uncertainty`: every bootstrap resample is solved
+with the nonnegative LASSO solver, and selection probabilities are computed from
+nonnegative coefficient draws.
 """
 function nonnegative_lasso_bootstrap_uncertainty(A, b, lambda; kwargs...)
     return _lasso_resampling_uncertainty(A, b, lambda, true, :bootstrap; kwargs...)
@@ -32,9 +46,14 @@ end
 """
     lasso_noise_perturbation_uncertainty(A, b, lambda; noise_sigma, samples=100, kwargs...)
 
-Estimate sensitivity to an assumed Gaussian measurement-noise model by repeatedly
-solving with `b + noise_sigma * randn(...)`. Alternatively pass `noise_norm`,
-which is converted to `noise_sigma = noise_norm / sqrt(length(b))`.
+Estimate uncertainty from an assumed additive Gaussian noise model. Each sample
+solves LASSO with `b_sample = b + noise_sigma * randn(...)`. If only the L2 norm
+of the noise is known, pass `noise_norm`; it is converted to
+`noise_sigma = noise_norm / sqrt(length(b))`.
+
+Use this when the noise model is more trustworthy than row resampling. The
+returned summary has the same fields as the bootstrap routine: coefficient
+mean/std, quantile intervals, selection probabilities, and prediction summaries.
 """
 function lasso_noise_perturbation_uncertainty(A, b, lambda; kwargs...)
     return _lasso_resampling_uncertainty(A, b, lambda, false, :noise; kwargs...)
@@ -43,7 +62,9 @@ end
 """
     nonnegative_lasso_noise_perturbation_uncertainty(A, b, lambda; noise_sigma, samples=100, kwargs...)
 
-Noise-perturbation uncertainty for nonnegative penalized LASSO.
+Noise-perturbation uncertainty for nonnegative penalized LASSO. Each perturbed
+right-hand side is solved with the nonnegative LASSO solver, so coefficient draws
+respect the positivity constraint.
 """
 function nonnegative_lasso_noise_perturbation_uncertainty(A, b, lambda; kwargs...)
     return _lasso_resampling_uncertainty(A, b, lambda, true, :noise; kwargs...)
@@ -108,9 +129,13 @@ end
 """
     lasso_stability_selection(A, b, lambda; samples=100, subsample_fraction=0.5, kwargs...)
 
-Repeatedly solve LASSO on random row subsets and return per-coefficient selection
-probabilities. Pass a vector of lambdas to compare support stability across a
-lambda grid.
+Estimate active-set stability by repeatedly solving LASSO on random row subsets.
+A coefficient is counted as selected when `abs(x[j]) > selection_tol`. The main
+output is `selection_probability`, a coefficient-by-lambda matrix.
+
+Pass either a single `lambda` or a vector of lambdas. `stable_support` marks
+entries whose selection probability is at least `threshold` (default `0.8`). This
+is useful when the support is more important than classical standard errors.
 """
 function lasso_stability_selection(A, b, lambda; kwargs...)
     return _lasso_stability_selection(A, b, lambda, false; kwargs...)
@@ -119,7 +144,9 @@ end
 """
     nonnegative_lasso_stability_selection(A, b, lambda; samples=100, subsample_fraction=0.5, kwargs...)
 
-Stability selection for nonnegative penalized LASSO.
+Stability selection for nonnegative penalized LASSO. Random subsets are solved
+with the nonnegative solver, and selection probabilities summarize how often
+each nonnegative coefficient remains active.
 """
 function nonnegative_lasso_stability_selection(A, b, lambda; kwargs...)
     return _lasso_stability_selection(A, b, lambda, true; kwargs...)
@@ -196,9 +223,12 @@ end
 """
     lasso_lambda_path(A, b, lambdas; kwargs...)
 
-Solve LASSO across a lambda path and report coefficient paths, residual norms,
-L1 norms, and active-set indicators. Lambdas are solved in the supplied order
-with warm starts after the first solve.
+Measure sensitivity to the regularization strength by solving LASSO over a
+user-supplied lambda path. Solves are warm-started in the supplied order, so pass
+nearby lambdas in the order you want to inspect, often from large to small.
+
+Returns coefficient paths, residual norms, L1 norms, active-set indicators, and
+for each coefficient the minimum/maximum lambda values where it was active.
 """
 function lasso_lambda_path(A, b, lambdas; kwargs...)
     return _lasso_lambda_path(A, b, lambdas, false; kwargs...)
@@ -207,7 +237,9 @@ end
 """
     nonnegative_lasso_lambda_path(A, b, lambdas; kwargs...)
 
-Lambda-path sensitivity for nonnegative penalized LASSO.
+Lambda-path sensitivity for nonnegative penalized LASSO. This is useful for
+checking whether positive components persist across nearby lambda choices or only
+appear in a narrow tuning interval.
 """
 function nonnegative_lasso_lambda_path(A, b, lambdas; kwargs...)
     return _lasso_lambda_path(A, b, lambdas, true; kwargs...)
@@ -281,11 +313,19 @@ function _lasso_lambda_path(
 end
 
 """
-    debiased_lasso_refit(A, b, x; support_tol=1e-8, noise_variance=nothing)
+    debiased_lasso_refit(A, b, x; support_tol=1e-8, noise_variance=nothing, positive=false)
 
-Refit least squares on the support selected by a LASSO solution and report an
-approximate covariance and standard errors conditional on that support. This is
-a useful diagnostic, but it does not account for support-selection uncertainty.
+Refit on the support selected by a LASSO solution. For signed models this uses
+ordinary least squares on `support = findall(abs.(x) .> support_tol)`. With
+`positive=true`, the refit uses an active-set nonnegative least-squares solve on
+that selected support; coefficients that cannot remain positive are dropped and
+reported through `support`, while the original LASSO-selected support is returned
+as `original_support`.
+
+The covariance and standard errors are computed only on the final refit support,
+using `noise_variance` if supplied or the residual variance estimate otherwise.
+These are conditional diagnostics: they do not include uncertainty from the
+support-selection step itself.
 """
 function debiased_lasso_refit(
     A,
@@ -309,6 +349,7 @@ function debiased_lasso_refit(
         return (
             x=coefficients,
             support=support,
+            original_support=support,
             residual=residual,
             noise_variance=sigma2,
             covariance=covariance,
@@ -317,27 +358,86 @@ function debiased_lasso_refit(
     end
 
     A_support = A[:, support]
-    refit = A_support \ b
     if positive
-        refit = max.(refit, zero(eltype(refit)))
+        refit, active_support_indices = _nnls_active_set(A_support, b)
+        final_support = support[active_support_indices]
+    else
+        refit = A_support \ b
+        final_support = support
     end
+
     coefficients[support] = refit
     residual = b - A * coefficients
-    degrees_of_freedom = max(length(b) - length(support), 1)
+    degrees_of_freedom = max(length(b) - length(final_support), 1)
     sigma2 = isnothing(noise_variance) ? sum(abs2, residual) / degrees_of_freedom : float(noise_variance)
     _validate_nonnegative(sigma2, "noise_variance")
-    support_covariance = sigma2 .* pinv(transpose(A_support) * A_support)
-    covariance[support, support] = support_covariance
-    standard_error[support] = sqrt.(max.(diag(support_covariance), zero(eltype(support_covariance))))
+
+    if !isempty(final_support)
+        A_active = A[:, final_support]
+        active_covariance = sigma2 .* pinv(transpose(A_active) * A_active)
+        covariance[final_support, final_support] = active_covariance
+        standard_error[final_support] = sqrt.(max.(diag(active_covariance), zero(eltype(active_covariance))))
+    end
 
     return (
         x=coefficients,
-        support=support,
+        support=final_support,
+        original_support=support,
         residual=residual,
         noise_variance=sigma2,
         covariance=covariance,
         standard_error=standard_error,
     )
+end
+
+function _nnls_active_set(A, b; tol=100 * eps(float(promote_type(eltype(A), eltype(b)))), maxiter=30 * size(A, 2))
+    n = size(A, 2)
+    T = float(promote_type(eltype(A), eltype(b)))
+    x = zeros(T, n)
+    passive = falses(n)
+    gradient = transpose(A) * (b - A * x)
+    iterations = 0
+
+    while any((.!passive) .& (gradient .> tol))
+        iterations += 1
+        iterations <= maxiter || break
+        candidate = argmax(ifelse.(passive, typemin(T), gradient))
+        passive[candidate] = true
+
+        while true
+            passive_indices = findall(passive)
+            trial = zeros(T, n)
+            trial[passive_indices] = A[:, passive_indices] \ b
+            if all(trial[passive_indices] .> tol)
+                x = trial
+                break
+            end
+
+            blocking = passive_indices[trial[passive_indices] .<= tol]
+            ratios = [x[j] / (x[j] - trial[j]) for j in blocking if x[j] > tol]
+            if isempty(ratios)
+                for j in blocking
+                    passive[j] = false
+                    x[j] = zero(T)
+                end
+                break
+            end
+
+            alpha = minimum(ratios)
+            x .= x .+ alpha .* (trial .- x)
+            for j in passive_indices
+                if x[j] <= tol
+                    passive[j] = false
+                    x[j] = zero(T)
+                end
+            end
+        end
+
+        gradient = transpose(A) * (b - A * x)
+    end
+
+    x[abs.(x) .<= tol] .= zero(T)
+    return x, findall(x .> tol)
 end
 
 function _solve_lasso_sample(
