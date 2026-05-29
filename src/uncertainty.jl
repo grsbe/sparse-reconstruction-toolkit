@@ -1,4 +1,5 @@
-export debiased_lasso_refit,
+export debiased_lasso,
+    lasso_refit,
     lasso_bootstrap_uncertainty,
     lasso_lambda_path,
     lasso_noise_perturbation_uncertainty,
@@ -312,8 +313,143 @@ function _lasso_lambda_path(
     )
 end
 
+
 """
-    debiased_lasso_refit(A, b, x; support_tol=1e-8, noise_variance=nothing, positive=false)
+    debiased_lasso(A, b, lambda; x_hat=nothing, M=nothing, noise_variance=nothing, kwargs...)
+
+Construct the desparsified/debiased LASSO estimator
+
+`x_debiased = x_hat + (1 / m) * M * A' * (b - A * x_hat)`
+
+where `m = length(b)` and `x_hat` is either supplied or computed by solving
+LASSO at `lambda`. By default, `M = pinv(A' * A / m)`, which is a practical
+choice when an explicit matrix pseudo-inverse is affordable. Supplying `M` lets
+callers use a custom approximate inverse of the empirical Gram matrix.
+
+The returned covariance follows the Gaussian term in the debiased estimator:
+
+`covariance = noise_variance * M * A' * A * M' / m^2`.
+
+If `noise_variance` is omitted, it is estimated from the LASSO residual using the
+active-set size as degrees of freedom. Alternatively pass `noise_sigma` or
+`noise_norm`. The returned `bias_operator = I - M * (A' * A / m)` and
+`bias_operator_infnorm` summarize the remainder-control term; the true remainder
+still depends on the unknown recovery error.
+
+Important keywords:
+- `x_hat`: existing LASSO estimate to debias.
+- `positive`: compute `x_hat` with nonnegative LASSO when `x_hat` is omitted.
+- `algorithm`: `:fista` or `:admm` for computing `x_hat`.
+- `M`: custom approximate inverse of `A' * A / m`.
+- `noise_variance`, `noise_sigma`, or `noise_norm`: measurement-noise scale.
+
+Returns `x`, `x_hat`, `covariance`, `standard_error`, `residual`, noise variance,
+`M`, empirical Gram matrix, and bias-operator diagnostics.
+"""
+function debiased_lasso(
+    A,
+    b,
+    lambda;
+    x_hat=nothing,
+    M=nothing,
+    noise_variance=nothing,
+    noise_sigma=nothing,
+    noise_norm=nothing,
+    positive=false,
+    algorithm=:fista,
+    support_tol=1e-8,
+    x0=nothing,
+    step=nothing,
+    rho=1.0,
+    kwargs...,
+)
+    _validate_problem(A, b)
+    _validate_nonnegative(lambda, "lambda")
+    _validate_nonnegative(support_tol, "support_tol")
+    _validate_uncertainty_kwargs(kwargs)
+
+    m = length(b)
+    x_lasso = isnothing(x_hat) ?
+              _solve_lasso_sample(
+                  A,
+                  b,
+                  lambda,
+                  algorithm,
+                  positive;
+                  x0,
+                  step,
+                  rho,
+                  kwargs...,
+              ).x :
+              copy(float.(x_hat))
+    length(x_lasso) == size(A, 2) ||
+        throw(DimensionMismatch("x_hat must have length size(A, 2)"))
+
+    gram = adjoint(A) * A
+    empirical_gram = gram ./ m
+    correction_matrix = isnothing(M) ? pinv(empirical_gram) : float.(M)
+    size(correction_matrix) == (size(A, 2), size(A, 2)) ||
+        throw(DimensionMismatch("M must have size (size(A, 2), size(A, 2))"))
+
+    residual = b - A * x_lasso
+    x = x_lasso + (correction_matrix * (adjoint(A) * residual)) ./ m
+    sigma2 = _debiased_noise_variance(
+        residual,
+        x_lasso,
+        m;
+        support_tol,
+        noise_variance,
+        noise_sigma,
+        noise_norm,
+    )
+    covariance = sigma2 .* correction_matrix * gram * adjoint(correction_matrix) ./ (m^2)
+    standard_error = sqrt.(max.(diag(covariance), zero(eltype(covariance))))
+    bias_operator = Matrix{eltype(covariance)}(I, size(A, 2), size(A, 2)) -
+                    correction_matrix * empirical_gram
+
+    return (
+        x=x,
+        x_hat=x_lasso,
+        residual=residual,
+        noise_variance=sigma2,
+        covariance=covariance,
+        standard_error=standard_error,
+        M=correction_matrix,
+        empirical_gram=empirical_gram,
+        bias_operator=bias_operator,
+        bias_operator_infnorm=norm(bias_operator, Inf),
+    )
+end
+
+function _debiased_noise_variance(
+    residual,
+    x_hat,
+    m;
+    support_tol,
+    noise_variance,
+    noise_sigma,
+    noise_norm,
+)
+    supplied = count(!isnothing, (noise_variance, noise_sigma, noise_norm))
+    supplied <= 1 || throw(ArgumentError("pass only one of noise_variance, noise_sigma, or noise_norm"))
+    if !isnothing(noise_variance)
+        _validate_nonnegative(noise_variance, "noise_variance")
+        return float(noise_variance)
+    elseif !isnothing(noise_sigma)
+        _validate_nonnegative(noise_sigma, "noise_sigma")
+        return float(noise_sigma)^2
+    elseif !isnothing(noise_norm)
+        _validate_nonnegative(noise_norm, "noise_norm")
+        return float(noise_norm)^2 / m
+    end
+
+    active = count(abs.(x_hat) .> support_tol)
+    degrees_of_freedom = max(m - active, 1)
+    return sum(abs2, residual) / degrees_of_freedom
+end
+
+"""
+    lasso_refit(A, b, x; support_tol=1e-8, noise_variance=nothing, positive=false)
 
 Refit on the support selected by a LASSO solution. For signed models this uses
 ordinary least squares on `support = findall(abs.(x) .> support_tol)`. With
@@ -327,7 +463,7 @@ using `noise_variance` if supplied or the residual variance estimate otherwise.
 These are conditional diagnostics: they do not include uncertainty from the
 support-selection step itself.
 """
-function debiased_lasso_refit(
+function lasso_refit(
     A,
     b,
     x;

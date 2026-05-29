@@ -463,8 +463,17 @@ end
         abstol=1e-9,
         reltol=1e-8,
     )
-    debiased = debiased_lasso_refit(A, b, [1.5, -0.5, 0.0])
-    positive_refit = debiased_lasso_refit(
+    refit = lasso_refit(A, b, [1.5, -0.5, 0.0])
+    debiased = debiased_lasso(
+        A,
+        b,
+        0.5;
+        noise_sigma=0.0,
+        algorithm=:fista,
+        abstol=1e-9,
+        reltol=1e-8,
+    )
+    positive_refit = lasso_refit(
         [1.0 1.0; 1.0 0.0],
         [0.1, 1.0],
         [1.0, 1.0];
@@ -495,10 +504,15 @@ end
     @test positive_path.coefficients[:, end] ≈ [2.0, 0.0, 0.2] atol = 2e-6
     @test all(positive_path.coefficients .>= -2e-6)
 
-    @test debiased.support == [1, 2]
-    @test debiased.x ≈ [2.0, -1.0, 0.0] atol = 2e-6
-    @test size(debiased.covariance) == (3, 3)
-    @test all(debiased.standard_error .>= 0)
+    @test refit.support == [1, 2]
+    @test refit.x ≈ [2.0, -1.0, 0.0] atol = 2e-6
+    @test size(refit.covariance) == (3, 3)
+    @test all(refit.standard_error .>= 0)
+
+    @test debiased.x_hat ≈ [1.75, -0.75, 0.0] atol = 2e-6
+    @test debiased.x ≈ [2.0, -1.0, 0.2] atol = 2e-6
+    @test all(debiased.standard_error .== 0.0)
+    @test debiased.bias_operator_infnorm <= 1e-10
 
     @test positive_refit.original_support == [1, 2]
     @test positive_refit.support == [1]
@@ -510,7 +524,9 @@ end
     @test_throws ArgumentError lasso_noise_perturbation_uncertainty(A, b, 0.0; noise_sigma=0.0, noise_norm=1.0)
     @test_throws ArgumentError lasso_stability_selection(A, b, 0.0; subsample_fraction=0.0)
     @test_throws ArgumentError lasso_lambda_path(A, b, Float64[])
-    @test_throws DimensionMismatch debiased_lasso_refit(A, b, zeros(2))
+    @test_throws DimensionMismatch lasso_refit(A, b, zeros(2))
+    @test_throws DimensionMismatch debiased_lasso(A, b, 0.0; x_hat=zeros(2))
+    @test_throws ArgumentError debiased_lasso(A, b, 0.0; noise_sigma=0.0, noise_norm=1.0)
 end
 
 @testset "ADMM input validation" begin

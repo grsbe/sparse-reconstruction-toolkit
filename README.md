@@ -267,14 +267,14 @@ path.activation_max_lambda
 Use this to see whether components persist across regularization strengths or
 appear only at one fragile lambda.
 
-Debiased refit asks what the coefficients look like after removing LASSO shrinkage
+Refit asks what the coefficients look like after removing LASSO shrinkage
 on the selected support. For signed models it refits ordinary least squares on
 the active support. With `positive=true`, it refits a nonnegative least-squares
 problem on that support and drops selected coefficients that cannot stay positive:
 
 ```julia
 x_lasso = nonnegative_lasso_fista(A, b, lambda)
-refit = debiased_lasso_refit(A, b, x_lasso; positive=true)
+refit = lasso_refit(A, b, x_lasso; positive=true)
 
 refit.x
 refit.support
@@ -286,6 +286,25 @@ refit.covariance
 The refit standard errors are conditional on the final support. They are useful
 for diagnostics, but they do not include support-selection uncertainty; combine
 with bootstrap or stability selection when support uncertainty matters.
+
+Debiased LASSO applies an analytic correction to the LASSO estimate:
+
+```julia
+deb = debiased_lasso(A, b, lambda; noise_norm=noise_l2)
+
+x_debiased = deb.x
+deb.standard_error
+deb.covariance
+deb.bias_operator_infnorm
+```
+
+The correction is `x_hat + (1 / m) * M * A' * (b - A * x_hat)`, where `m` is the
+number of measurements. By default `M = pinv(A' * A / m)`, but you can pass a
+custom approximate inverse with `M=...`. The reported covariance is the Gaussian
+term `sigma^2 * M * A' * A * M' / m^2`; `sigma^2` comes from `noise_variance`,
+`noise_sigma`, `noise_norm`, or a residual estimate. The field
+`bias_operator_infnorm` summarizes how close `M * (A' * A / m)` is to identity;
+smaller is better for the theoretical remainder term.
 
 Cross-validation results also include `validation_standard_errors` and
 `lambda_1se`. The one-standard-error rule picks the largest lambda whose CV error
