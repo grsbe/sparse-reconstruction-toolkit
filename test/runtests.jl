@@ -760,7 +760,7 @@ end
         target=9.0,
         metric,
         factor=4.0,
-        maxiter=40,
+        steps=40,
         reltol=1e-3,
     )
     @test multiplicative.stopped
@@ -776,7 +776,7 @@ end
         metric,
         increasing=false,
         factor=4.0,
-        maxiter=40,
+        steps=40,
         reltol=1e-3,
     )
     @test decreasing_multiplicative.stopped
@@ -859,5 +859,5 @@ end
     @test_throws ArgumentError bracketed_parameter_sweep(identity, 1.0; target=1.0, metric, on_bracket_failure=:warn)
     @test_throws ArgumentError multiplicative_parameter_sweep(identity, 0.0; target=1.0, metric)
     @test_throws ArgumentError multiplicative_parameter_sweep(identity, 1.0; target=1.0, metric, factor=1.0)
-    @test_throws ArgumentError multiplicative_parameter_sweep(identity, 1.0; target=1.0, metric, maxiter=0)
+    @test_throws ArgumentError multiplicative_parameter_sweep(identity, 1.0; target=1.0, metric, steps=0)
 end

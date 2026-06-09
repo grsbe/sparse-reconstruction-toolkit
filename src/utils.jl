@@ -181,7 +181,7 @@ function multiplicative_parameter_sweep(
     target,
     metric,
     factor=2.0,
-    maxiter=50,
+    steps=50,
     increasing=true,
     abstol=0.0,
     reltol=1e-3,
@@ -192,8 +192,8 @@ function multiplicative_parameter_sweep(
     _validate_positive(start, "start")
     _validate_positive(factor, "factor")
     factor > 1 || throw(ArgumentError("factor must be greater than 1"))
-    maxiter isa Integer && maxiter > 0 ||
-        throw(ArgumentError("maxiter must be a positive integer"))
+    steps isa Integer && steps > 0 ||
+        throw(ArgumentError("steps must be a positive integer"))
 
     local_stop = isnothing(stop) ?
                  stop_when_within(metric, target; abstol, reltol) :
@@ -227,7 +227,7 @@ function multiplicative_parameter_sweep(
     end
 
     previous_value = value
-    for iteration in 2:maxiter
+    for iteration in 2:steps
         candidate = search_up ? candidate * current_factor : candidate / current_factor
         result = snapshot(solve(candidate))
         value = metric(result)

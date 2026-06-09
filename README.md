@@ -227,7 +227,7 @@ sweep = multiplicative_parameter_sweep(
     metric=result -> result.residual,
     factor=4.0,
     reltol=1e-3,
-    maxiter=40,
+    steps=40,
 )
 ```
 
