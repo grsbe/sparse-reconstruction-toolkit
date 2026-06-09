@@ -574,3 +574,103 @@ end
     @test_throws DimensionMismatch lasso_ridge_fista(A, A, ones(3), 1.0, 1.0)
     @test_throws DimensionMismatch LassoRidgeFISTAWorkspace(A, A, b; z0=zeros(3))
 end
+
+
+@testset "soft-min robust LASSO" begin
+    rng = MersenneTwister(7)
+    A = randn(rng, 5, 3, 4)
+    y = randn(rng, 5)
+    x = randn(rng, 4)
+    tau = 0.3
+
+    @test_throws ArgumentError softmin_lasso(randn(rng, 5, 4), y, 0.1; tau)
+    @test_throws ArgumentError softmin_lasso(A, randn(rng, 4), 0.1; tau)
+    @test_throws ArgumentError softmin_lasso(A, y, 0.1; tau=0.0)
+    @test_throws ArgumentError softmin_lasso(A, y, -0.1; tau)
+    @test_throws ArgumentError softmin_lasso(A, y, 0.1; tau, x0=zeros(3))
+    @test_throws ArgumentError softmin_lasso(A, y, 0.1; tau=Float64[])
+    @test_throws ArgumentError softmin_lasso(A, y, 0.1; tau=[1.0, 0.0])
+
+    loss, gradient = softmin_lasso_loss_gradient(A, y, x, tau)
+    eps_fd = 1e-6
+    for j in eachindex(x)
+        direction = zeros(length(x))
+        direction[j] = eps_fd
+        fd = (
+            softmin_lasso_loss(A, y, x + direction, tau) -
+            softmin_lasso_loss(A, y, x - direction, tau)
+        ) / (2eps_fd)
+        @test gradient[j] ≈ fd rtol = 1e-5 atol = 1e-5
+    end
+    @test loss ≈ softmin_lasso_objective(A, y, x, 0.0, tau)
+
+    small_tau = 1e-4
+    hard_loss = sum(
+        minimum(
+            (dot(view(A, i, k, :), x) - y[i])^2
+            for k in axes(A, 2)
+        )
+        for i in axes(A, 1)
+    )
+    @test softmin_lasso_loss(A, y, x, small_tau) ≈ hard_loss atol = 1e-3
+    @test isfinite(softmin_lasso_loss(A, y, 100 .* x, 20.0))
+    weights = softmin_lasso_weights(A, y, x, tau)
+    @test size(weights) == (size(A, 1), size(A, 2))
+    @test all(sum(weights; dims=2)[:] .≈ 1.0)
+
+    info = softmin_lasso(
+        A,
+        y,
+        0.05;
+        tau,
+        step=0.5,
+        maxiter=80,
+        return_info=true,
+    )
+    @test info.x isa Vector
+    @test size(info.weights) == (size(A, 1), size(A, 2))
+    @test length(info.objective_values) >= 1
+    @test all(diff(info.objective_values) .<= 1e-10)
+    @test robust_lasso(A, y, 0.05; tau, maxiter=2) isa Vector
+
+    dense = softmin_lasso(A, y, 0.0; tau, step=0.5, maxiter=80)
+    sparse = softmin_lasso(A, y, 5.0; tau, step=0.5, maxiter=80)
+    @test count(!iszero, sparse) <= count(!iszero, dense)
+
+    scheduler_info = softmin_lasso(
+        A,
+        y,
+        0.05;
+        tau=[1.0, 0.3],
+        step=0.5,
+        maxiter=5,
+        return_info=true,
+    )
+    @test scheduler_info.tau == 0.3
+    @test length(scheduler_info.stages) == 2
+
+    m, K, n = 35, 3, 8
+    Arec = randn(rng, m, K, n)
+    x_true = zeros(n)
+    x_true[[2, 6]] .= [1.2, -0.9]
+    chosen = rand(rng, 1:K, m)
+    for i in 1:m
+        for k in 1:K
+            if k != chosen[i]
+                Arec[i, k, :] .+= 2.0 .* randn(rng, n)
+            end
+        end
+    end
+    yrec = [dot(view(Arec, i, chosen[i], :), x_true) for i in 1:m]
+    recovered = softmin_lasso(
+        Arec,
+        yrec,
+        0.03;
+        tau=[1.0, 0.2, 0.05],
+        step=0.2,
+        maxiter=200,
+    )
+    true_predictions = [dot(view(Arec, i, chosen[i], :), recovered) for i in 1:m]
+    @test norm(true_predictions - yrec) / sqrt(m) < 0.35
+    @test count(abs.(recovered) .> 0.1) <= 4
+end
