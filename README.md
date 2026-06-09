@@ -56,6 +56,45 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 | Nonnegative L1-ball constrained least squares | `nonnegative_constrained_lasso_admm` | `nonnegative_constrained_lasso_fista` |
 | L1-regularized `x` and ridge-regularized `z` |  | `lasso_ridge_fista` |
 | Nonnegative L1-regularized `x` and ridge-regularized `z` |  | `nonnegative_lasso_ridge_fista` |
+| Soft-min robust LASSO with perturbed rows |  | `softmin_lasso` |
+
+## Robust LASSO Quick Start
+
+For robust sparse regression where each measurement has several possible
+perturbed design rows, use `softmin_lasso`. Here `A_perturbed` has shape
+`(m, K, n)`: `m` measurements, `K` candidate rows per measurement, and `n`
+unknown coefficients.
+
+```julia
+m, K, n = 40, 5, 12
+A_perturbed = randn(m, K, n)
+y = randn(m)
+
+lambda = 0.05
+tau = 0.2
+
+info = softmin_lasso(
+    A_perturbed,
+    y,
+    lambda;
+    tau,
+    step=0.5,
+    maxiter=1_000,
+    return_info=true,
+)
+
+x = info.x
+weights = info.weights  # soft row assignment weights, size (m, K)
+```
+
+`tau` controls how sharply the solver selects among perturbed rows. Smaller
+values approach the hard objective `sum_i min_k residual[i, k]^2`, while larger
+values average candidate rows more smoothly. You can pass a schedule to anneal
+from smooth to sharp and warm-start each stage:
+
+```julia
+x = softmin_lasso(A_perturbed, y, lambda; tau=[1.0, 0.3, 0.1], step=0.5)
+```
 
 The penalized calls use `lambda`:
 
@@ -139,6 +178,60 @@ For nearby parameter sweeps, warm starts can help:
 x1 = nonnegative_lasso_fista(fista, 1e-5)
 x2 = nonnegative_lasso_fista(fista, 5e-6; warm_start=true)
 ```
+
+## Generic Parameter Sweeps
+
+Use `parameter_sweep` when you want the same sweep logic for different solvers.
+The sweep only needs a candidate list, a `solve` function, a scalar `score`, and
+an optional stopping rule.
+
+```julia
+noise_l2 = 0.25
+metric = result -> result.residual
+
+sweep = parameter_sweep(
+    [1e-2, 3e-3, 1e-3, 3e-4],
+    lambda -> begin
+        info = nonnegative_lasso_fista(
+            fista,
+            lambda;
+            warm_start=true,
+            return_info=true,
+        )
+        residual = norm(A * info.x - b)
+        (lambda=lambda, x=copy(info.x), info=info, residual=residual)
+    end;
+    stop=stop_when_below(metric, noise_l2),
+    score=distance_score(metric, noise_l2),
+)
+
+lambda = sweep.result.lambda
+x = sweep.result.x
+sweep.trials
+```
+
+For monotone metrics, use `bisection_parameter_sweep`. By default it assumes the
+metric increases with the parameter; set `increasing=false` when larger parameter
+values reduce the metric.
+
+```julia
+sweep = bisection_parameter_sweep(
+    lambda -> begin
+        info = lasso_fista(A, b, lambda; return_info=true)
+        residual = norm(A * info.x - b)
+        (lambda=lambda, x=copy(info.x), residual=residual)
+    end,
+    0.0,
+    1.0;
+    target=noise_l2,
+    metric=result -> result.residual,
+    steps=20,
+    abstol=1e-3,
+)
+```
+
+Use the `snapshot` keyword when a solver returns mutable buffers that may be
+changed by later warm-started trials.
 
 If the L2 norm of the noise is known, the package can choose `lambda` by a
 warm-started residual-matching search:

@@ -674,3 +674,89 @@ end
     @test norm(true_predictions - yrec) / sqrt(m) < 0.35
     @test count(abs.(recovered) .> 0.1) <= 4
 end
+
+
+@testset "generic parameter sweeps" begin
+    metric = result -> result.mismatch
+    grid = parameter_sweep(
+        [0.5, 1.0, 1.5, 2.0],
+        value -> (value=value, mismatch=abs(value - 1.4));
+        stop=stop_when_below(metric, 0.15),
+        score=distance_score(metric, 0.0),
+    )
+
+    @test grid.stopped
+    @test grid.candidate == 1.5
+    @test grid.result.mismatch ≈ 0.1
+    @test grid.iterations == 3
+    @test length(grid.trials) == 3
+
+    limited = parameter_sweep(
+        1:10,
+        value -> (value=value, mismatch=value);
+        maxiter=2,
+        score=result -> result.mismatch,
+    )
+    @test limited.iterations == 2
+    @test limited.candidate == 1
+    @test !limited.stopped
+
+    mutable_result = [0.0]
+    no_snapshot = parameter_sweep(
+        [2.0, 1.0],
+        value -> begin
+            mutable_result[1] = value
+            return (x=mutable_result, mismatch=value)
+        end;
+        score=metric,
+    )
+    @test no_snapshot.result.x === mutable_result
+
+    with_snapshot = parameter_sweep(
+        [2.0, 1.0],
+        value -> begin
+            mutable_result[1] = value
+            return (x=mutable_result, mismatch=value)
+        end;
+        score=metric,
+        snapshot=result -> merge(result, (x=copy(result.x),)),
+    )
+    @test with_snapshot.result.x == [1.0]
+    @test with_snapshot.result.x !== mutable_result
+
+    @test_throws ArgumentError parameter_sweep(Int[], identity)
+    @test_throws ArgumentError parameter_sweep(1:2, identity; maxiter=0)
+
+    increasing = bisection_parameter_sweep(
+        value -> (value=value, mismatch=value^2),
+        0.0,
+        10.0;
+        target=9.0,
+        metric,
+        steps=40,
+        abstol=1e-6,
+    )
+    @test increasing.stopped
+    @test increasing.candidate ≈ 3.0 atol = 1e-3
+    @test increasing.metric ≈ 9.0 atol = 1e-3
+
+    decreasing = bisection_parameter_sweep(
+        value -> (value=value, mismatch=10.0 - value),
+        0.0,
+        10.0;
+        target=2.0,
+        metric,
+        increasing=false,
+        steps=40,
+        abstol=1e-6,
+    )
+    @test decreasing.stopped
+    @test decreasing.candidate ≈ 8.0 atol = 1e-3
+    @test decreasing.metric ≈ 2.0 atol = 1e-3
+
+    @test stop_when_within(metric, 1.0; abstol=0.1)((mismatch=1.05,))
+    @test stop_when_above(metric, 1.0)((mismatch=1.0,))
+    @test stop_when_below(metric, 1.0)((mismatch=1.0,))
+    @test_throws ArgumentError bisection_parameter_sweep(identity, 1.0, 0.0; target=1.0, metric)
+    @test_throws ArgumentError bisection_parameter_sweep(identity, 0.0, 1.0; target=1.0, metric, steps=0)
+end
