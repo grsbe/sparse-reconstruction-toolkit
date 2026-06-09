@@ -754,9 +754,110 @@ end
     @test decreasing.candidate ≈ 8.0 atol = 1e-3
     @test decreasing.metric ≈ 2.0 atol = 1e-3
 
+    multiplicative = multiplicative_parameter_sweep(
+        value -> (value=value, mismatch=value^2),
+        0.25;
+        target=9.0,
+        metric,
+        factor=4.0,
+        maxiter=40,
+        reltol=1e-3,
+    )
+    @test multiplicative.stopped
+    @test multiplicative.candidate ≈ 3.0 rtol = 2e-3
+    @test multiplicative.metric ≈ 9.0 rtol = 4e-3
+    @test any(trial.crossed for trial in multiplicative.trials)
+    @test multiplicative.factor < 4.0
+
+    decreasing_multiplicative = multiplicative_parameter_sweep(
+        value -> (value=value, mismatch=10.0 - value),
+        1.0;
+        target=2.0,
+        metric,
+        increasing=false,
+        factor=4.0,
+        maxiter=40,
+        reltol=1e-3,
+    )
+    @test decreasing_multiplicative.stopped
+    @test decreasing_multiplicative.candidate ≈ 8.0 rtol = 2e-3
+    @test decreasing_multiplicative.metric ≈ 2.0 rtol = 4e-3
+
+    bracketed = bracketed_parameter_sweep(
+        value -> (value=value, mismatch=value^2),
+        0.25;
+        target=9.0,
+        metric,
+        factor=2.0,
+        bracket_steps=10,
+        bisection_steps=40,
+        abstol=1e-6,
+    )
+    @test bracketed.bracket_found
+    @test bracketed.stopped
+    @test bracketed.candidate ≈ 3.0 atol = 1e-3
+    @test bracketed.metric ≈ 9.0 atol = 1e-3
+    @test bracketed.low <= bracketed.candidate <= bracketed.high
+    @test !isnothing(bracketed.bisection)
+    @test bracketed.iterations == length(bracketed.trials)
+
+    decreasing_bracketed = bracketed_parameter_sweep(
+        value -> (value=value, mismatch=10.0 - value),
+        1.0;
+        target=2.0,
+        metric,
+        increasing=false,
+        factor=2.0,
+        bracket_steps=10,
+        bisection_steps=40,
+        abstol=1e-6,
+    )
+    @test decreasing_bracketed.bracket_found
+    @test decreasing_bracketed.stopped
+    @test decreasing_bracketed.candidate ≈ 8.0 atol = 1e-3
+    @test decreasing_bracketed.metric ≈ 2.0 atol = 1e-3
+
+    immediate = bracketed_parameter_sweep(
+        value -> (value=value, mismatch=value),
+        2.0;
+        target=2.0,
+        metric,
+    )
+    @test immediate.stopped
+    @test immediate.bracket_found
+    @test isnothing(immediate.bisection)
+    @test immediate.iterations == 1
+
+    failed_bracket = bracketed_parameter_sweep(
+        value -> (value=value, mismatch=value),
+        1.0;
+        target=100.0,
+        metric,
+        factor=2.0,
+        bracket_steps=2,
+        on_bracket_failure=:return,
+    )
+    @test !failed_bracket.bracket_found
+    @test !failed_bracket.stopped
+    @test failed_bracket.candidate == 4.0
+    @test_throws ArgumentError bracketed_parameter_sweep(
+        value -> (value=value, mismatch=value),
+        1.0;
+        target=100.0,
+        metric,
+        factor=2.0,
+        bracket_steps=2,
+    )
+
     @test stop_when_within(metric, 1.0; abstol=0.1)((mismatch=1.05,))
     @test stop_when_above(metric, 1.0)((mismatch=1.0,))
     @test stop_when_below(metric, 1.0)((mismatch=1.0,))
     @test_throws ArgumentError bisection_parameter_sweep(identity, 1.0, 0.0; target=1.0, metric)
     @test_throws ArgumentError bisection_parameter_sweep(identity, 0.0, 1.0; target=1.0, metric, steps=0)
+    @test_throws ArgumentError bracketed_parameter_sweep(identity, 0.0; target=1.0, metric)
+    @test_throws ArgumentError bracketed_parameter_sweep(identity, 1.0; target=1.0, metric, factor=1.0)
+    @test_throws ArgumentError bracketed_parameter_sweep(identity, 1.0; target=1.0, metric, on_bracket_failure=:warn)
+    @test_throws ArgumentError multiplicative_parameter_sweep(identity, 0.0; target=1.0, metric)
+    @test_throws ArgumentError multiplicative_parameter_sweep(identity, 1.0; target=1.0, metric, factor=1.0)
+    @test_throws ArgumentError multiplicative_parameter_sweep(identity, 1.0; target=1.0, metric, maxiter=0)
 end

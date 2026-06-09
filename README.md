@@ -210,23 +210,59 @@ x = sweep.result.x
 sweep.trials
 ```
 
-For monotone metrics, use `bisection_parameter_sweep`. By default it assumes the
-metric increases with the parameter; set `increasing=false` when larger parameter
-values reduce the metric.
+For monotone metrics that change roughly exponentially with the parameter,
+`multiplicative_parameter_sweep` keeps the search multiplicative throughout. It
+starts from one value, moves by `factor`, reverses direction whenever the target
+is crossed, and replaces `factor` with `sqrt(factor)` after each crossing.
 
 ```julia
-sweep = bisection_parameter_sweep(
+sweep = multiplicative_parameter_sweep(
     lambda -> begin
         fit = lasso_fista(A, b, lambda; return_info=true)
         residual = norm(A * fit.x - b)
         (lambda=lambda, x=copy(fit.x), fit=fit, residual=residual)
     end,
-    0.0,
-    1.0;
+    1e-6;
     target=noise_l2,
     metric=result -> result.residual,
-    steps=20,
-    abstol=1e-3,
+    factor=4.0,
+    reltol=1e-3,
+    maxiter=40,
+)
+```
+
+By default the metric is assumed to increase with the parameter; set
+`increasing=false` when larger parameter values reduce the metric. The returned
+`sweep.stopped` tells you whether the relative/absolute target tolerance was
+reached. `sweep.trials` records the candidate, metric, current factor, direction,
+and whether each trial crossed the target.
+
+Use `bracketed_parameter_sweep` when you want stricter bracket-then-bisect
+behavior, or `bisection_parameter_sweep` directly when you already know good
+`low` and `high` bounds. Warm starts are controlled inside the `solve` function,
+not by the sweep engine. Create a reusable solver outside the closure, pass
+`warm_start=true` after the first trial, and copy mutable outputs that should be
+kept in `sweep.trials`.
+
+```julia
+fista = LassoFISTASolver(A, b)
+trial = Ref(0)
+
+sweep = multiplicative_parameter_sweep(
+    lambda -> begin
+        trial[] += 1
+        fit = nonnegative_lasso_fista(
+            fista,
+            lambda;
+            warm_start=trial[] > 1,
+            return_info=true,
+        )
+        residual = norm(A * fit.x - b)
+        (lambda=lambda, x=copy(fit.x), fit=fit, residual=residual)
+    end,
+    1e-6;
+    target=noise_l2,
+    metric=result -> result.residual,
 )
 ```
 
