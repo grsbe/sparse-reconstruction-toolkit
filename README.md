@@ -73,7 +73,7 @@ y = randn(m)
 lambda = 0.05
 tau = 0.2
 
-info = softmin_lasso(
+result = softmin_lasso(
     A_perturbed,
     y,
     lambda;
@@ -83,8 +83,8 @@ info = softmin_lasso(
     return_info=true,
 )
 
-x = info.x
-weights = info.weights  # soft row assignment weights, size (m, K)
+x = result.x
+weights = result.weights  # soft row assignment weights, size (m, K)
 ```
 
 `tau` controls how sharply the solver selects among perturbed rows. Smaller
@@ -192,14 +192,14 @@ metric = result -> result.residual
 sweep = parameter_sweep(
     [1e-2, 3e-3, 1e-3, 3e-4],
     lambda -> begin
-        info = nonnegative_lasso_fista(
+        fit = nonnegative_lasso_fista(
             fista,
             lambda;
             warm_start=true,
             return_info=true,
         )
-        residual = norm(A * info.x - b)
-        (lambda=lambda, x=copy(info.x), info=info, residual=residual)
+        residual = norm(A * fit.x - b)
+        (lambda=lambda, x=copy(fit.x), fit=fit, residual=residual)
     end;
     stop=stop_when_below(metric, noise_l2),
     score=distance_score(metric, noise_l2),
@@ -217,9 +217,9 @@ values reduce the metric.
 ```julia
 sweep = bisection_parameter_sweep(
     lambda -> begin
-        info = lasso_fista(A, b, lambda; return_info=true)
-        residual = norm(A * info.x - b)
-        (lambda=lambda, x=copy(info.x), residual=residual)
+        fit = lasso_fista(A, b, lambda; return_info=true)
+        residual = norm(A * fit.x - b)
+        (lambda=lambda, x=copy(fit.x), fit=fit, residual=residual)
     end,
     0.0,
     1.0;
@@ -407,10 +407,11 @@ sparser model when several lambdas perform similarly.
 
 ## Useful Options
 
-All solver calls accept stopping options such as:
+All solver calls accept stopping options. With `return_info=true`, they return
+a diagnostics result:
 
 ```julia
-info = nonnegative_lasso_fista(
+result = nonnegative_lasso_fista(
     A,
     b,
     lambda;
@@ -420,9 +421,9 @@ info = nonnegative_lasso_fista(
     return_info=true,
 )
 
-x = info.x
-info.converged
-info.iterations
+x = result.x
+result.converged
+result.iterations
 ```
 
 ADMM also accepts `rho` when creating one-shot or reusable ADMM solvers:
@@ -472,7 +473,7 @@ The first knobs to try on repeated or large inversion problems are:
    a lambda search:
 
    ```julia
-   info = nonnegative_lasso_fista(
+   result = nonnegative_lasso_fista(
        fista,
        lambda;
        maxiter=2_000,
@@ -480,8 +481,8 @@ The first knobs to try on repeated or large inversion problems are:
    )
    ```
 
-Check `info.converged`, `info.iterations`, and your reconstruction or residual
-quality before treating a capped solve as final.
+Check `result.converged`, `result.iterations`, and your reconstruction or
+residual quality before treating a capped solve as final.
 
 ## Threading
 
