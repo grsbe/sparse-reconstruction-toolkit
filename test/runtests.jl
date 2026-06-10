@@ -590,8 +590,23 @@ end
     @test_throws ArgumentError softmin_lasso(A, y, 0.1; tau, x0=zeros(3))
     @test_throws ArgumentError softmin_lasso(A, y, 0.1; tau=Float64[])
     @test_throws ArgumentError softmin_lasso(A, y, 0.1; tau=[1.0, 0.0])
+    @test_throws ArgumentError softmin_lasso_step_size(zeros(5, 4))
+    @test_throws ArgumentError softmin_lasso_step_size(A; safety=0.0)
+    @test softmin_lasso_step_size(zeros(2, 1, 3)) == 1.0
+    @test SoftminLassoWorkspace(A, y).step == softmin_lasso_step_size(A)
 
     loss, gradient = softmin_lasso_loss_gradient(A, y, x, tau)
+    workspace = SoftminLassoWorkspace(A, y; step=0.5, x0=x)
+    fast_loss = SparseReconstructionToolkit._softmin_loss_gradient!(workspace, tau)
+    @test fast_loss ≈ loss atol = 1e-10
+    @test workspace.gradient ≈ gradient atol = 1e-10
+    @test SparseReconstructionToolkit._softmin_weights(workspace, tau) ≈
+          softmin_lasso_weights(A, y, x, tau) atol = 1e-10
+    @test size(workspace.residuals) == (size(A, 1), size(A, 2))
+    @test length(workspace.slices) == size(A, 2)
+    @test workspace.slices[1] isa Matrix
+    view_workspace = SoftminLassoWorkspace(A, y; copy_slices=false)
+    @test view_workspace.slices[1] isa SubArray
     eps_fd = 1e-6
     for j in eachindex(x)
         direction = zeros(length(x))
@@ -629,6 +644,8 @@ end
     )
     @test info.x isa Vector
     @test size(info.weights) == (size(A, 1), size(A, 2))
+    @test info.backtracks >= 0
+    @test length(info.backtrack_counts) == info.iterations
     @test length(info.objective_values) >= 1
     @test all(diff(info.objective_values) .<= 1e-10)
     @test robust_lasso(A, y, 0.05; tau, maxiter=2) isa Vector
