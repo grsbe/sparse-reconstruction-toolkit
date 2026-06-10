@@ -8,7 +8,8 @@
 
 and related L1-ball constrained variants. It currently provides ADMM and FISTA
 solvers for standard and nonnegative LASSO problems, a two-block LASSO-ridge
-FISTA solver, plus Gurobi helper solvers and benchmark scripts for comparison.
+FISTA solver, a soft-min robust LASSO solver for perturbed rows, plus Gurobi
+helper solvers and benchmark scripts for comparison.
 
 The solvers use `ProximalOperators.jl` for the L1, nonnegative, and L1-ball
 proximal steps.
@@ -78,7 +79,6 @@ result = softmin_lasso(
     y,
     lambda;
     tau,
-    step=0.5,
     maxiter=1_000,
     return_info=true,
 )
@@ -93,7 +93,25 @@ values average candidate rows more smoothly. You can pass a schedule to anneal
 from smooth to sharp and warm-start each stage:
 
 ```julia
-x = softmin_lasso(A_perturbed, y, lambda; tau=[1.0, 0.3, 0.1], step=0.5)
+x = softmin_lasso(A_perturbed, y, lambda; tau=[1.0, 0.3, 0.1])
+```
+
+The initial proximal-gradient step size is chosen automatically from
+`A_perturbed`. If a solve spends time in backtracking, inspect
+`result.backtracks` and `result.backtrack_counts`. You can override the initial
+step explicitly when needed:
+
+```julia
+step = softmin_lasso_step_size(A_perturbed; safety=50.0)
+result = softmin_lasso(A_perturbed, y, lambda; tau, step=step, return_info=true)
+```
+
+The workspace caches each `A_perturbed[:, k, :]` slice as a dense matrix by
+default for faster repeated solves. Use `copy_slices=false` only when memory is
+more important than setup time:
+
+```julia
+solver = SoftminLassoSolver(A_perturbed, y; copy_slices=false)
 ```
 
 The penalized calls use `lambda`:
@@ -143,7 +161,7 @@ objects follow the ordinary FISTA API.
 ## Repeated Solves
 
 One-shot functions build solver state for a single call. For repeated solves
-with the same `A` and `b`, create a reusable solver object.
+with the same operator and measurements, create a reusable solver object.
 
 ADMM:
 
@@ -163,6 +181,15 @@ fista = LassoFISTASolver(A, b)
 x1 = lasso_fista(fista, 0.2)
 x2 = nonnegative_lasso_fista(fista, 0.1)
 x3 = nonnegative_constrained_lasso_fista(fista, 1.0)
+```
+
+Soft-min robust LASSO:
+
+```julia
+robust = SoftminLassoSolver(A_perturbed, y)
+
+result1 = softmin_lasso(robust, 0.05; tau=0.2, return_info=true)
+result2 = softmin_lasso(robust, 0.02; tau=0.2, warm_start=true)
 ```
 
 Solver objects are mutable and reuse internal solution buffers. Copy a result
@@ -187,6 +214,7 @@ an optional stopping rule.
 
 ```julia
 noise_l2 = 0.25
+fista = LassoFISTASolver(A, b)
 metric = result -> result.residual
 
 sweep = parameter_sweep(
@@ -443,8 +471,8 @@ sparser model when several lambdas perform similarly.
 
 ## Useful Options
 
-All solver calls accept stopping options. With `return_info=true`, they return
-a diagnostics result:
+The iterative solver calls accept stopping options. With `return_info=true`,
+they return a diagnostics result:
 
 ```julia
 result = nonnegative_lasso_fista(
@@ -522,7 +550,7 @@ residual quality before treating a capped solve as final.
 
 ## Threading
 
-The ADMM/FISTA iteration order is sequential, but dense linear algebra inside
+The iterative solver loops are sequential, but dense linear algebra inside
 each iteration can use BLAS threads. This matters for large dense operators.
 
 ```julia
@@ -532,8 +560,9 @@ BLAS.get_num_threads()
 ```
 
 Benchmark the thread count for the target machine and problem size. Small
-problems may be faster with one BLAS thread; the included `testdata` operator
-benefited from more BLAS threads in local measurements.
+problems may be faster with one BLAS thread; the included `testdata` and
+`testdata_robustness` operators benefited from more BLAS threads in local
+measurements.
 
 ## Gurobi Reference Helpers
 
