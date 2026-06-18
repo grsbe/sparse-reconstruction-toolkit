@@ -8,8 +8,9 @@
 
 and related L1-ball constrained variants. It currently provides ADMM and FISTA
 solvers for standard and nonnegative LASSO problems, a two-block LASSO-ridge
-FISTA solver, a soft-min robust LASSO solver for perturbed rows, plus Gurobi
-helper solvers and benchmark scripts for comparison.
+FISTA solver, a primal-dual 2D total variation solver, a soft-min robust LASSO
+solver for perturbed rows, plus Gurobi helper solvers and benchmark scripts for
+comparison.
 
 The solvers use `ProximalOperators.jl` for the L1, nonnegative, and L1-ball
 proximal steps.
@@ -49,15 +50,17 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 
 ## Solver Choices
 
-| Problem | ADMM | FISTA |
-| --- | --- | --- |
-| Penalized LASSO | `lasso_admm` | `lasso_fista` |
-| Penalized LASSO with `x >= 0` | `nonnegative_lasso_admm` | `nonnegative_lasso_fista` |
-| L1-ball constrained least squares | `constrained_lasso_admm` | `constrained_lasso_fista` |
-| Nonnegative L1-ball constrained least squares | `nonnegative_constrained_lasso_admm` | `nonnegative_constrained_lasso_fista` |
-| L1-regularized `x` and ridge-regularized `z` |  | `lasso_ridge_fista` |
-| Nonnegative L1-regularized `x` and ridge-regularized `z` |  | `nonnegative_lasso_ridge_fista` |
-| Soft-min robust LASSO with perturbed rows |  | `softmin_lasso` |
+| Problem | Solver |
+| --- | --- |
+| Penalized LASSO | `lasso_admm`, `lasso_fista` |
+| Penalized LASSO with `x >= 0` | `nonnegative_lasso_admm`, `nonnegative_lasso_fista` |
+| L1-ball constrained least squares | `constrained_lasso_admm`, `constrained_lasso_fista` |
+| Nonnegative L1-ball constrained least squares | `nonnegative_constrained_lasso_admm`, `nonnegative_constrained_lasso_fista` |
+| L1-regularized `x` and ridge-regularized `z` | `lasso_ridge_fista` |
+| Nonnegative L1-regularized `x` and ridge-regularized `z` | `nonnegative_lasso_ridge_fista` |
+| 2D total variation regularized least squares | `total_variation_pdhg` |
+| 2D total variation plus L1 regularization | `l1_total_variation_pdhg` |
+| Soft-min robust LASSO with perturbed rows | `softmin_lasso` |
 
 ## Robust LASSO Quick Start
 
@@ -157,6 +160,83 @@ Use `x_nonnegative=true` or `z_nonnegative=true` to constrain either block to
 be nonnegative, or call `nonnegative_lasso_ridge_fista` when both blocks should
 be constrained. Reusable `LassoRidgeFISTASolver` and `LassoRidgeFISTAWorkspace`
 objects follow the ordinary FISTA API.
+
+## 2D Total Variation Quick Start
+
+Use `total_variation_pdhg` when the unknown vector represents a 2D image and
+neighboring pixels should be piecewise smooth:
+
+```julia
+height, width = 32, 32
+image_size = (height, width)
+n = height * width
+
+A = randn(400, n)
+b = randn(400)
+
+lambda_tv = 0.05
+result = total_variation_pdhg(
+    A,
+    b,
+    image_size,
+    lambda_tv;
+    maxiter=2_000,
+    return_info=true,
+)
+
+x = result.x
+image = reshape(x, image_size)
+```
+
+The solver minimizes
+
+```math
+\frac{1}{2}\|Ax-b\|_2^2 + \lambda_{\mathrm{tv}}\operatorname{TV}(x).
+```
+
+`image_size` follows Julia column-major vectorization: `x[i + (j - 1) *
+height]` is pixel `(i, j)`. By default the TV penalty is isotropic. Pass
+`isotropic=false` for anisotropic TV:
+
+```julia
+x = total_variation_pdhg(A, b, image_size, lambda_tv; isotropic=false)
+```
+
+For sparse image reconstructions, combine TV with an L1 penalty:
+
+```julia
+lambda_l1 = 0.01
+x = l1_total_variation_pdhg(A, b, image_size, lambda_l1, lambda_tv)
+```
+
+Set `lambda_tv=0.0` to use the same solver as a plain L1 solver:
+
+```julia
+x = l1_total_variation_pdhg(A, b, image_size, lambda_l1, 0.0)
+```
+
+Nonnegative variants are available when pixel values should satisfy `x >= 0`:
+
+```julia
+x_tv = nonnegative_total_variation_pdhg(A, b, image_size, lambda_tv)
+x_l1_tv = nonnegative_l1_total_variation_pdhg(
+    A,
+    b,
+    image_size,
+    lambda_l1,
+    lambda_tv,
+)
+```
+
+For repeated solves with the same `A`, `b`, and `image_size`, reuse the cached
+workspace:
+
+```julia
+tv = TotalVariationPDHGSolver(A, b, image_size)
+
+x1 = total_variation_pdhg(tv, 0.05)
+x2 = l1_total_variation_pdhg(tv, 0.01, 0.03; warm_start=true)
+```
 
 ## Repeated Solves
 
