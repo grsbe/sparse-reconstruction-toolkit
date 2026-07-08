@@ -953,3 +953,79 @@ end
     @test_throws DimensionMismatch TotalVariationPDHGWorkspace(A, b, (3, 2))
     @test_throws DimensionMismatch total_variation2d(b, (2, 3))
 end
+
+@testset "2D Laplacian LASSO FISTA" begin
+    A = Matrix{Float64}(I, 4, 4)
+    image_size = (2, 2)
+    b = [0.0, 1.0, 0.0, 1.0]
+
+    @test laplacian2d(ones(4), image_size) ≈ zeros(4)
+    @test laplacian2d([1.0, 2.0, 3.0, 4.0], image_size) ≈ [3.0, 1.0, -1.0, -3.0]
+
+    smooth_info = laplacian_lasso_fista(
+        A,
+        b,
+        image_size,
+        0.0,
+        10.0;
+        abstol=1e-9,
+        reltol=1e-8,
+        maxiter=10_000,
+        return_info=true,
+    )
+    @test smooth_info.converged
+    @test sum(smooth_info.x) / length(smooth_info.x) ≈ sum(b) / length(b) atol = 1e-4
+    @test norm(laplacian2d(smooth_info.x, image_size)) < norm(laplacian2d(b, image_size))
+
+    l1_info = laplacian_lasso_fista(
+        A,
+        [2.0, -1.0, 0.2, -0.1],
+        image_size,
+        0.5,
+        0.0;
+        abstol=1e-9,
+        reltol=1e-8,
+        maxiter=5_000,
+        return_info=true,
+    )
+    @test l1_info.converged
+    @test l1_info.x ≈ lasso_fista(A, [2.0, -1.0, 0.2, -0.1], 0.5) atol = 2e-5
+
+    nonnegative_x = nonnegative_laplacian_lasso_fista(
+        A,
+        [2.0, -1.0, 0.2, -0.1],
+        image_size,
+        0.5,
+        0.0;
+        abstol=1e-9,
+        reltol=1e-8,
+        maxiter=5_000,
+    )
+    @test nonnegative_x ≈ [1.5, 0.0, 0.0, 0.0] atol = 2e-5
+    @test all(nonnegative_x .>= -2e-6)
+
+    workspace = LaplacianFISTAWorkspace(A, b, image_size; lambda_laplacian=10.0)
+    solver = LaplacianFISTASolver(A, b, image_size; lambda_laplacian=10.0)
+    workspace_info = laplacian_lasso_fista!(
+        workspace,
+        0.0,
+        10.0;
+        abstol=1e-9,
+        reltol=1e-8,
+        maxiter=10_000,
+        return_info=true,
+    )
+    warm_info = laplacian_lasso_fista!(workspace, 0.0, 10.0; warm_start=true, return_info=true)
+    solver_x = laplacian_lasso_fista(solver, 0.0, 10.0; abstol=1e-9, reltol=1e-8, maxiter=10_000)
+
+    @test workspace_info.x ≈ smooth_info.x atol = 2e-5
+    @test warm_info.iterations <= workspace_info.iterations
+    @test solver_x ≈ smooth_info.x atol = 2e-5
+
+    @test_throws ArgumentError laplacian_lasso_fista(A, b, image_size, -1.0, 1.0)
+    @test_throws ArgumentError laplacian_lasso_fista(A, b, image_size, 1.0, -1.0)
+    @test_throws ArgumentError laplacian_lasso_step_size(A; method=:unknown)
+    @test_throws ArgumentError laplacian_lasso_step_size(A; safety=0.0)
+    @test_throws DimensionMismatch LaplacianFISTAWorkspace(A, b, (3, 2))
+    @test_throws DimensionMismatch laplacian2d(b, (2, 3))
+end

@@ -8,9 +8,9 @@
 
 and related L1-ball constrained variants. It currently provides ADMM and FISTA
 solvers for standard and nonnegative LASSO problems, a two-block LASSO-ridge
-FISTA solver, a primal-dual 2D total variation solver, a soft-min robust LASSO
-solver for perturbed rows, plus Gurobi helper solvers and benchmark scripts for
-comparison.
+FISTA solver, 2D total variation and Laplacian image regularizers, a soft-min
+robust LASSO solver for perturbed rows, plus Gurobi helper solvers and
+benchmark scripts for comparison.
 
 The solvers use `ProximalOperators.jl` for the L1, nonnegative, and L1-ball
 proximal steps.
@@ -60,6 +60,7 @@ julia --project=. -e 'using Pkg; Pkg.test()'
 | Nonnegative L1-regularized `x` and ridge-regularized `z` | `nonnegative_lasso_ridge_fista` |
 | 2D total variation regularized least squares | `total_variation_pdhg` |
 | 2D total variation plus L1 regularization | `l1_total_variation_pdhg` |
+| 2D Laplacian plus L1 regularization | `laplacian_lasso_fista` |
 | Soft-min robust LASSO with perturbed rows | `softmin_lasso` |
 
 ## Robust LASSO Quick Start
@@ -236,6 +237,70 @@ tv = TotalVariationPDHGSolver(A, b, image_size)
 
 x1 = total_variation_pdhg(tv, 0.05)
 x2 = l1_total_variation_pdhg(tv, 0.01, 0.03; warm_start=true)
+```
+
+## 2D Laplacian Quick Start
+
+Use `laplacian_lasso_fista` when the unknown vector is a 2D image and you want
+a smooth quadratic roughness penalty instead of TV edge-preserving smoothing:
+
+```julia
+height, width = 32, 32
+image_size = (height, width)
+n = height * width
+
+A = randn(400, n)
+b = randn(400)
+
+lambda_l1 = 0.01
+lambda_laplacian = 0.1
+
+x = laplacian_lasso_fista(
+    A,
+    b,
+    image_size,
+    lambda_l1,
+    lambda_laplacian,
+)
+```
+
+The solver minimizes
+
+```math
+\frac{1}{2}\|Ax-b\|_2^2 + \lambda_1\|x\|_1 +
+\frac{\lambda_2}{2}\|Lx\|_2^2.
+```
+
+where `L` is the 5-point 2D graph Laplacian. Boundary pixels use only existing
+neighbors, so constant images have zero Laplacian. Set `lambda_laplacian=0.0`
+to recover the ordinary L1 FISTA behavior through the same API.
+
+Use the nonnegative wrapper for `x >= 0`:
+
+```julia
+x = nonnegative_laplacian_lasso_fista(
+    A,
+    b,
+    image_size,
+    lambda_l1,
+    lambda_laplacian,
+)
+```
+
+For repeated solves with fixed `A`, `b`, `image_size`, and a comparable
+`lambda_laplacian`, cache the workspace. Pass `lambda_laplacian` at construction
+time so the default FISTA step size is chosen for that curvature:
+
+```julia
+lap = LaplacianFISTASolver(A, b, image_size; lambda_laplacian)
+
+x1 = laplacian_lasso_fista(lap, 0.01, lambda_laplacian)
+x2 = nonnegative_laplacian_lasso_fista(
+    lap,
+    0.005,
+    lambda_laplacian;
+    warm_start=true,
+)
 ```
 
 ## Repeated Solves

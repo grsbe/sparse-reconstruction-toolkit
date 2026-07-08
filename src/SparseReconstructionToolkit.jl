@@ -2,6 +2,7 @@ module SparseReconstructionToolkit
 
 Base.include(@__MODULE__, "srt.jl")
 Base.include(@__MODULE__, "total_variation.jl")
+Base.include(@__MODULE__, "laplacian.jl")
 Base.include(@__MODULE__, "utils.jl")
 Base.include(@__MODULE__, "robust_solver.jl")
 Base.include(@__MODULE__, "hyperparameters.jl")
