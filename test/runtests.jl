@@ -287,6 +287,16 @@ end
         reltol=1e-8,
         return_info=true,
     )
+    optimality_info = nonnegative_lasso_ridge_fista(
+        A,
+        B,
+        b,
+        0.5,
+        1.0;
+        optimality_abstol=1e-10,
+        optimality_reltol=1e-8,
+        return_info=true,
+    )
     workspace = LassoRidgeFISTAWorkspace(A, B, b)
     named_workspace = LassoRidgeFISTAWorkspace(A, B, b)
     solver = LassoRidgeFISTASolver(A, B, b)
@@ -321,6 +331,10 @@ end
     @test positive_info.z ≈ [1.5, 0.0] atol = 2e-6
     @test named_positive_info.x ≈ positive_info.x atol = 2e-6
     @test named_positive_info.z ≈ positive_info.z atol = 2e-6
+    @test optimality_info.converged
+    @test optimality_info.optimality_residual <= 1e-8
+    @test optimality_info.x ≈ positive_info.x atol = 2e-6
+    @test optimality_info.z ≈ positive_info.z atol = 2e-6
     @test all(positive_info.x .>= -2e-6)
     @test all(positive_info.z .>= -2e-6)
     @test workspace_result.x ≈ info.x atol = 2e-6

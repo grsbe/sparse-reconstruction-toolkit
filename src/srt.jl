@@ -694,13 +694,22 @@ function _lasso_ridge_fista!(
     warm_start=false,
     abstol=1e-6,
     reltol=1e-4,
+    optimality_abstol=nothing,
+    optimality_reltol=nothing,
     maxiter=10_000,
     return_info=false,
 )
     _validate_nonnegative(abstol, "abstol")
     _validate_nonnegative(reltol, "reltol")
+    isnothing(optimality_abstol) ||
+        _validate_nonnegative(optimality_abstol, "optimality_abstol")
+    isnothing(optimality_reltol) ||
+        _validate_nonnegative(optimality_reltol, "optimality_reltol")
     maxiter isa Integer && maxiter > 0 ||
         throw(ArgumentError("maxiter must be a positive integer"))
+    use_optimality = !isnothing(optimality_abstol) || !isnothing(optimality_reltol)
+    optimality_abstol = something(optimality_abstol, zero(workspace.step))
+    optimality_reltol = something(optimality_reltol, zero(workspace.step))
 
     x = workspace.x
     z = workspace.z
@@ -726,6 +735,7 @@ function _lasso_ridge_fista!(
     copyto!(z_momentum, z)
 
     iterate_change = Inf
+    optimality_residual = Inf
     converged = false
     iterations = maxiter
     t = one(step)
@@ -743,6 +753,12 @@ function _lasso_ridge_fista!(
         _prox_nonsmooth!(x, x_term, prox_input_x, step)
         _prox_ridge!(z, prox_input_z, ridge_scale, z_nonnegative)
 
+        @. prox_input_x = (x_momentum - x) / step
+        @. prox_input_z = (z_momentum - z) / step
+        optimality_residual =
+            max(norm(prox_input_x, Inf), norm(prox_input_z, Inf))
+        optimality_scale =
+            max(norm(gradient_x, Inf), norm(gradient_z, Inf), eps(float(step)))
         @. prox_input_x = x - x_previous
         @. prox_input_z = z - z_previous
         iterate_change = sqrt(norm(prox_input_x)^2 + norm(prox_input_z)^2)
@@ -751,7 +767,11 @@ function _lasso_ridge_fista!(
             sqrt(norm(x_previous)^2 + norm(z_previous)^2),
         )
         iterate_tolerance = root_n * abstol + reltol * iterate_norm
-        if iterate_change <= iterate_tolerance
+        optimality_tolerance =
+            optimality_abstol + optimality_reltol * optimality_scale
+        if use_optimality ?
+           optimality_residual <= optimality_tolerance :
+           iterate_change <= iterate_tolerance
             converged = true
             iterations = iteration
             break
@@ -771,6 +791,7 @@ function _lasso_ridge_fista!(
             converged=converged,
             iterations=iterations,
             iterate_change=iterate_change,
+            optimality_residual=optimality_residual,
             step=step,
         )
     end
