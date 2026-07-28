@@ -210,13 +210,45 @@ end
     workspace_x = nonnegative_lasso_fista!(workspace, 0.5)
     solver_x = nonnegative_lasso_fista(solver, 0.5)
     admm_x = nonnegative_lasso_admm(A, b, 0.5; rho=1.0)
+    optimality_info = nonnegative_lasso_fista(
+        A,
+        b,
+        0.5;
+        optimality_abstol=1e-10,
+        optimality_reltol=1e-8,
+        return_info=true,
+    )
 
     @test info.converged
+    @test optimality_info.converged
+    @test optimality_info.optimality_residual <= 1e-8
     @test info.x ≈ [1.5, 0.0, 0.0] atol = 2e-6
     @test workspace_x ≈ info.x atol = 2e-6
     @test solver_x ≈ info.x atol = 2e-6
     @test info.x ≈ admm_x atol = 2e-4
     @test all(info.x .>= -2e-6)
+
+    coupled_A = [1.0 0.8; 0.2 1.0; 0.7 0.4]
+    coupled_b = [1.0, 0.3, 0.8]
+    coupled_solver = LassoFISTASolver(coupled_A, coupled_b)
+    nonnegative_lasso_fista(
+        coupled_solver,
+        0.4;
+        optimality_abstol=1e-10,
+        optimality_reltol=1e-7,
+    )
+    warm = nonnegative_lasso_fista(
+        coupled_solver,
+        0.2;
+        warm_start=true,
+        optimality_abstol=1e-10,
+        optimality_reltol=1e-7,
+        return_info=true,
+    )
+    reference = nonnegative_lasso_admm(coupled_A, coupled_b, 0.2; rho=1.0)
+    @test warm.converged
+    @test warm.iterations > 1
+    @test warm.x ≈ reference atol = 2e-4
 end
 
 @testset "LASSO-ridge FISTA" begin

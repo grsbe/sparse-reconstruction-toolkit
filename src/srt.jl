@@ -583,13 +583,22 @@ function _lasso_fista!(
     warm_start=false,
     abstol=1e-6,
     reltol=1e-4,
+    optimality_abstol=nothing,
+    optimality_reltol=nothing,
     maxiter=10_000,
     return_info=false,
 )
     _validate_nonnegative(abstol, "abstol")
     _validate_nonnegative(reltol, "reltol")
+    isnothing(optimality_abstol) ||
+        _validate_nonnegative(optimality_abstol, "optimality_abstol")
+    isnothing(optimality_reltol) ||
+        _validate_nonnegative(optimality_reltol, "optimality_reltol")
     maxiter isa Integer && maxiter > 0 ||
         throw(ArgumentError("maxiter must be a positive integer"))
+    use_optimality = !isnothing(optimality_abstol) || !isnothing(optimality_reltol)
+    optimality_abstol = something(optimality_abstol, zero(workspace.step))
+    optimality_reltol = something(optimality_reltol, zero(workspace.step))
 
     x = workspace.x
     y = workspace.y
@@ -606,6 +615,7 @@ function _lasso_fista!(
     copyto!(y, x)
 
     iterate_change = Inf
+    optimality_residual = Inf
     converged = false
     iterations = maxiter
     t = one(step)
@@ -620,9 +630,15 @@ function _lasso_fista!(
 
         @. prox_input = x - x_previous
         iterate_change = norm(prox_input)
-        iterate_tolerance =
-            root_n * abstol + reltol * max(norm(x), norm(x_previous))
-        if iterate_change <= iterate_tolerance
+        @. prox_input = (y - x) / step
+        optimality_residual = norm(prox_input, Inf)
+        optimality_scale = max(norm(gradient, Inf), eps(float(step)))
+        iterate_tolerance = root_n * abstol + reltol * max(norm(x), norm(x_previous))
+        optimality_tolerance =
+            optimality_abstol + optimality_reltol * optimality_scale
+        if use_optimality ?
+           optimality_residual <= optimality_tolerance :
+           iterate_change <= iterate_tolerance
             converged = true
             iterations = iteration
             break
@@ -640,6 +656,7 @@ function _lasso_fista!(
             converged=converged,
             iterations=iterations,
             iterate_change=iterate_change,
+            optimality_residual=optimality_residual,
             step=step,
         )
     end
