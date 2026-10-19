@@ -1075,3 +1075,5 @@ end
     @test_throws DimensionMismatch LaplacianFISTAWorkspace(A, b, (3, 2))
     @test_throws DimensionMismatch laplacian2d(b, (2, 3))
 end
+
+include("gpu_fista_tests.jl")

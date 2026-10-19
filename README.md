@@ -351,6 +351,58 @@ x1 = nonnegative_lasso_fista(fista, 1e-5)
 x2 = nonnegative_lasso_fista(fista, 5e-6; warm_start=true)
 ```
 
+## Single-GPU FISTA
+
+The separate solver in src/gpu_fista.jl accepts device-resident arrays and
+does not add CUDA as a required package dependency. Install CUDA.jl in the
+active environment and load it alongside this toolkit:
+
+```julia
+using CUDA, SparseArrays, SparseReconstructionToolkit
+
+A_gpu = CuArray(Float32.(A))
+b_gpu = CuArray(Float32.(b))
+solver = GPUFISTASolver(A_gpu, b_gpu)
+fit = gpu_nonnegative_lasso_fista(solver, 0.01f0; return_info=true)
+x_cpu = Array(fit.x)
+
+# Alternatively, compare a CSR representation of the same matrix:
+A_csr = CUDA.CUSPARSE.CuSparseMatrixCSR(sparse(Float32.(A)))
+sparse_solver = GPUFISTASolver(A_csr, b_gpu)
+x_sparse = gpu_nonnegative_lasso_fista(sparse_solver, 0.01f0)
+```
+
+The signed variant is gpu_lasso_fista. Reuse a solver with
+warm_start=true for nearby regularization parameters. Results stay on the GPU
+until explicitly copied with Array. The default step uses a device-side power
+estimate; pass step=... if you have a conservative bound. These functions cover
+penalized LASSO only, not the L1-ball constrained variants.
+
+At roughly 50% nonzeros, benchmark both dense and CSR storage: sparse indexing
+can cost more than skipping zeros in a dense matrix-vector product. Run the
+synthetic comparison with:
+
+```bash
+julia --project=/path/to/environment-with-CUDA benchmark/gpu_fista_dense_sparse.jl
+```
+
+Set SRT_GPU_DEVICE (CUDA device index), SRT_GPU_ROWS, SRT_GPU_COLS,
+SRT_GPU_ZERO_FRACTION, SRT_GPU_PRECISION, and SRT_GPU_ITERATIONS to adjust the generated problem. The script reports setup
+(including transfer) separately from repeated solve time, and compares both
+the existing CPU solver and the same FISTA loop run on CPU arrays. Use a real footprint
+matrix for the final performance decision.
+
+For the stored 5,475 by 6,000 testdata matrix and its SNR 30 measurement,
+compare positive FISTA on CPU, dense GPU, and CSR GPU with:
+
+```bash
+SRT_GPU_DEVICE=1 julia --project=/path/to/environment-with-CUDA-and-JLD2 benchmark/testdata_gpu_fista.jl
+```
+
+The script uses the lambda and tolerances from the existing positive FISTA
+testdata benchmark. It defaults to 10,000 maximum iterations and three
+timing samples; SRT_GPU_MAXITER and SRT_GPU_SAMPLES can change those limits.
+
 ## Generic Parameter Sweeps
 
 Use `parameter_sweep` when you want the same sweep logic for different solvers.

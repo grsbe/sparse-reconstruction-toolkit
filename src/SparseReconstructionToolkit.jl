@@ -1,6 +1,7 @@
 module SparseReconstructionToolkit
 
 Base.include(@__MODULE__, "srt.jl")
+Base.include(@__MODULE__, "gpu_fista.jl")
 Base.include(@__MODULE__, "total_variation.jl")
 Base.include(@__MODULE__, "laplacian.jl")
 Base.include(@__MODULE__, "utils.jl")
