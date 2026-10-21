@@ -1,3 +1,4 @@
 testdata/
 *.png
 *.jld2
+human_knowledge/
