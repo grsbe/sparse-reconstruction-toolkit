@@ -1,5 +1,8 @@
 # Sparse Reconstruction Toolkit
 
+This repo is no longer maintained and used, but kept as an intermediate snapshot.
+It's successor is the repository [Prism](https://github.com/grsbe/prism).
+
 `SparseReconstructionToolkit` is a Julia toolkit for sparse linear inverse problems of the form
 
 ```math
